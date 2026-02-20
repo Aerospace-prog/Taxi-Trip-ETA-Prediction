@@ -165,3 +165,7 @@ To know more details of this project, go to the [**PRD.md**](./PRD.md) file.
 # 📄 Project Details
 
 To know more details of this project, go to the [**Taxi Predict Project Details.md**](./Taxi_Predict_Project_Details.md) file.
+
+# 📄 Deployment Plan
+
+To know more details of this project, go to the [**Deployment_Plan.md**](./Deployment_Plan.md) file.
