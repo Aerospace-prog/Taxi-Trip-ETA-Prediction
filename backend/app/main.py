@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
+from app.routers import auth, predict, metrics, retrain
 
 settings = get_settings()
 
@@ -22,6 +23,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Register routers
+app.include_router(auth.router)
+app.include_router(predict.router)
+app.include_router(metrics.router)
+app.include_router(retrain.router)
+
 
 @app.get("/health", tags=["System"])
 def health_check():
@@ -39,3 +46,4 @@ def root():
         "message": f"Welcome to {settings.APP_NAME}",
         "docs": "/docs",
     }
+
