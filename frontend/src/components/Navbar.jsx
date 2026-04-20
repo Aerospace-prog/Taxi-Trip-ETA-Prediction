@@ -1,71 +1,41 @@
-import { Activity } from 'lucide-react';
+import { Activity, Menu } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
-export default function Navbar() {
+export default function Navbar({ onMenuToggle }) {
   const { user, isAdmin } = useAuth();
 
   return (
-    <header style={{
-      height: 56,
-      background: '#FFFFFF',
-      borderBottom: '1px solid var(--color-border)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      padding: '0 24px',
-      position: 'fixed',
-      top: 0,
-      left: 0,
-      right: 0,
-      zIndex: 50,
-    }}>
-      {/* Left: Logo */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <div style={{
-          width: 32,
-          height: 32,
-          borderRadius: 8,
-          background: '#1E293B',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}>
-          <Activity size={18} color="#FFFFFF" />
-        </div>
-        <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--color-text)' }}>
-          {isAdmin ? 'Taxi Trip Duration Prediction' : 'Dispatch ETA System'}
-        </span>
-        {isAdmin && (
-          <span className="badge badge-dark" style={{ fontSize: 10, padding: '2px 8px' }}>
-            ADMIN MODE
+    <header className="md:hidden fixed top-0 left-0 right-0 h-[72px] bg-white/70 backdrop-blur-2xl border-b border-white flex items-center justify-between px-4 z-40 transition-all shadow-sm">
+      {/* Left: Logo & Menu Toggle */}
+      <div className="flex items-center gap-3">
+        <button
+          onClick={onMenuToggle}
+          className="p-2 -ml-1 text-slate-500 hover:text-slate-800 hover:bg-white rounded-xl transition-all cursor-pointer border border-transparent hover:border-slate-100 hover:shadow-sm"
+          aria-label="Toggle Menu"
+        >
+          <Menu size={24} />
+        </button>
+
+        <div className="flex items-center gap-2">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center shadow-btn">
+            <Activity size={18} className="text-white" />
+          </div>
+          <span className="text-base font-extrabold text-slate-800 tracking-tight">
+            TaxiPredict
           </span>
-        )}
+          {isAdmin && (
+            <span className="badge bg-white/80 text-primary-600 border border-primary-100 py-0.5 shadow-sm">
+              ADMIN
+            </span>
+          )}
+        </div>
       </div>
 
-      {/* Right: User Info */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <span style={{
-          padding: '4px 12px',
-          border: '1px solid var(--color-border)',
-          borderRadius: 6,
-          fontSize: 12,
-          color: 'var(--color-text-muted)',
-        }}>
-          Auth: Bearer Token
-        </span>
-        <div style={{
-          width: 32,
-          height: 32,
-          borderRadius: '50%',
-          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: 13,
-          fontWeight: 600,
-          color: '#FFFFFF',
-        }}>
+      {/* Right: User Avatar */}
+      <div className="flex items-center gap-2">
+        <div className="w-10 h-10 border-2 border-white rounded-full bg-white shadow-sm flex items-center justify-center text-sm font-bold text-slate-700 relative">
           {user?.email?.charAt(0)?.toUpperCase() || 'U'}
+          <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-accent-500 rounded-full border-2 border-white shadow-glow-accent"></div>
         </div>
       </div>
     </header>

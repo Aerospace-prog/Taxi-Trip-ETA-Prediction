@@ -2,7 +2,9 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { RequireAuth, RequireAdmin } from './components/RouteGuards';
 import AppLayout from './components/AppLayout';
+import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
+import SignupPage from './pages/SignupPage';
 import DashboardPage from './pages/dispatcher/DashboardPage';
 import NewPredictionPage from './pages/dispatcher/NewPredictionPage';
 import PredictionResultPage from './pages/dispatcher/PredictionResultPage';
@@ -16,7 +18,9 @@ export default function App() {
       <AuthProvider>
         <Routes>
           {/* Public */}
+          <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/signup" element={<SignupPage />} />
 
           {/* Dispatcher Routes */}
           <Route element={<RequireAuth><AppLayout /></RequireAuth>}>
@@ -35,8 +39,8 @@ export default function App() {
             <Route path="/admin/retrain" element={<RetrainModelPage />} />
           </Route>
 
-          {/* Default Redirect */}
-          <Route path="*" element={<Navigate to="/login" replace />} />
+          {/* Catch-all Redirect */}
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AuthProvider>
     </BrowserRouter>

@@ -1,14 +1,14 @@
 import { useState, useEffect } from 'react';
-import { Upload, CheckCircle2, Circle, Loader, AlertCircle, ArrowDownUp, Zap, XCircle } from 'lucide-react';
+import { Upload, CheckCircle2, Circle, Loader, AlertCircle, ArrowDownUp, Zap, XCircle, Settings } from 'lucide-react';
 import api from '../../services/api';
 
 export default function RetrainModelPage() {
   const [file, setFile] = useState(null);
   const [jobId, setJobId] = useState(null);
+  const [candidateVersion, setCandidateVersion] = useState(null);
   const [trainingStatus, setTrainingStatus] = useState('idle'); // idle, uploading, running, finished, failed
   const [progress, setProgress] = useState(0);
   const [uploadError, setUploadError] = useState('');
-  const [candidateModel, setCandidateModel] = useState(null);
   const [activeMetrics, setActiveMetrics] = useState(null);
   const [promoteStatus, setPromoteStatus] = useState(''); // '', 'promoting', 'success', 'error'
   const [promoteError, setPromoteError] = useState('');
@@ -26,29 +26,21 @@ export default function RetrainModelPage() {
 
     const interval = setInterval(async () => {
       try {
-        // We keep polling the metrics to detect when a candidate model appears
         const metricsRes = await api.get('/metrics');
         setActiveMetrics(metricsRes.data);
 
-        // Simulate progress advancement based on time elapsed
         setProgress((prev) => {
-          if (prev >= 95) return 95; // Hold at 95% until confirmed
-          return prev + 5;
+          if (prev < 95) return prev + 5;
+          return prev;
         });
-
-        // Check if a new candidate model was created by checking /history for very recent entries
-        // The training service creates model_metadata with status="candidate"
-        // For simplicity, we progress the bar and mark done after a reasonable time
       } catch {
-        // Polling failure is not critical
+        // Silently capture intermittent polling errors
       }
     }, 5000);
 
-    // Auto-complete detection: after polling for a while, mark as finished
     const timeout = setTimeout(() => {
       setProgress(100);
       setTrainingStatus('finished');
-      // Re-fetch metrics to get the latest
       api.get('/metrics').then((res) => setActiveMetrics(res.data)).catch(() => {});
     }, 60000); // Allow up to 60s for training
 
@@ -96,10 +88,11 @@ export default function RetrainModelPage() {
 
       const res = await api.post('/retrain', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
-        timeout: 120000, // Allow up to 2 min for upload
+        timeout: 120000,
       });
 
       setJobId(res.data.job_id);
+      setCandidateVersion(res.data.candidate_version);
       setTrainingStatus('running');
       setProgress(15);
     } catch (err) {
@@ -119,7 +112,6 @@ export default function RetrainModelPage() {
     try {
       await api.post('/promote-model', { candidate_version: version });
       setPromoteStatus('success');
-      // Refresh metrics
       const res = await api.get('/metrics');
       setActiveMetrics(res.data);
     } catch (err) {
@@ -130,240 +122,246 @@ export default function RetrainModelPage() {
   };
 
   const stepIcon = (status) => {
-    if (status === 'done') return <CheckCircle2 size={18} color="var(--color-accent)" />;
-    if (status === 'running') return <Loader size={18} className="spinner" color="var(--color-primary)" />;
-    return <Circle size={18} color="#CBD5E1" />;
+    if (status === 'done') return <div className="w-6 h-6 rounded-full bg-accent-500 shadow-glow-accent flex items-center justify-center"><CheckCircle2 size={12} className="text-white" /></div>;
+    if (status === 'running') return <div className="w-6 h-6 rounded-full bg-white border-2 border-primary-500 flex items-center justify-center"><Loader size={12} className="text-primary-500 animate-spin" /></div>;
+    return <div className="w-6 h-6 rounded-full bg-white/50 border-2 border-slate-200" />;
   };
 
   return (
-    <div className="animate-fade-in" style={{ maxWidth: 860, margin: '0 auto' }}>
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
+    <div className="animate-fade-in max-w-5xl mx-auto pb-10 space-y-6 lg:mt-4">
+      {/* HEADER */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 mb-6">
         <div>
-          <h1 style={{ fontSize: 24, fontWeight: 700, margin: '0 0 4px' }}>Model Lifecycle Management</h1>
-          <p style={{ fontSize: 14, color: 'var(--color-text-muted)', margin: 0 }}>Retrain the XGBoost duration prediction model with new historical dispatch data.</p>
-        </div>
-        <div style={{ textAlign: 'right' }}>
-          <p style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-text-muted)', margin: '0 0 4px' }}>Active Model</p>
-          <span className="badge badge-success mono" style={{ padding: '4px 12px' }}>{activeMetrics?.active_model_version || '—'}</span>
-        </div>
-      </div>
-
-      {/* Section 1: Upload */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-        <span style={{ width: 28, height: 28, borderRadius: 6, background: 'var(--color-primary)', color: '#FFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700 }}>1</span>
-        <h2 style={{ fontSize: 17, fontWeight: 700, margin: 0 }}>Upload Training Dataset</h2>
-      </div>
-
-      <div
-        className="card"
-        onDrop={handleDrop}
-        onDragOver={(e) => e.preventDefault()}
-        style={{
-          textAlign: 'center',
-          padding: file ? 24 : 48,
-          border: '2px dashed var(--color-border)',
-          marginBottom: 16,
-          cursor: 'pointer',
-          transition: 'border-color 200ms',
-        }}
-        onClick={() => document.getElementById('file-input').click()}
-      >
-        <input id="file-input" type="file" accept=".csv,.parquet" onChange={handleFileChange} style={{ display: 'none' }} />
-        {file ? (
-          <>
-            <Upload size={28} color="var(--color-text-muted)" style={{ marginBottom: 8 }} />
-            <p style={{ fontWeight: 700, fontSize: 15, margin: '0 0 4px' }}>{file.name}</p>
-            <p style={{ fontSize: 13, color: 'var(--color-text-muted)', margin: '0 0 12px' }}>{(file.size / (1024 * 1024)).toFixed(1)} MB</p>
-            <span style={{ fontSize: 12, color: 'var(--color-primary)', cursor: 'pointer' }}>Replace file</span>
-          </>
-        ) : (
-          <>
-            <Upload size={32} color="#CBD5E1" style={{ marginBottom: 12 }} />
-            <p style={{ fontSize: 14, color: 'var(--color-text-muted)', margin: 0 }}>Drop a CSV or Parquet file here, or click to browse</p>
-          </>
-        )}
-      </div>
-
-      {uploadError && (
-        <div style={{ padding: '12px 16px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 6, color: '#DC2626', fontSize: 13, marginBottom: 16, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-          <XCircle size={16} style={{ flexShrink: 0, marginTop: 2 }} />
-          {uploadError}
-        </div>
-      )}
-
-      {/* Section 2: Pipeline */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, marginTop: 16 }}>
-        <span style={{ width: 28, height: 28, borderRadius: 6, background: 'var(--color-primary)', color: '#FFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700 }}>2</span>
-        <h2 style={{ fontSize: 17, fontWeight: 700, margin: 0 }}>Model Training Pipeline</h2>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 16, marginBottom: 32 }}>
-        <div className="card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-            <p style={{ fontWeight: 700, fontSize: 14, margin: 0 }}>Job Pipeline: <span className="mono">{jobId ? `#${jobId.slice(0, 8)}` : '—'}</span></p>
-            <span className={`badge ${trainingStatus === 'running' || trainingStatus === 'uploading' ? 'badge-info' : trainingStatus === 'finished' ? 'badge-success' : trainingStatus === 'failed' ? 'badge-warning' : 'badge-warning'}`}>
-              {trainingStatus === 'uploading' ? 'Uploading' : trainingStatus === 'running' ? 'Running' : trainingStatus === 'finished' ? 'Finished' : trainingStatus === 'failed' ? 'Failed' : 'Idle'}
-            </span>
+          <div className="flex items-center gap-3 mb-3">
+             <div className="p-2.5 rounded-2xl bg-white shadow-sm border border-white">
+                <Settings size={24} className="text-primary-500" />
+             </div>
+             <p className="text-[11px] font-bold tracking-widest uppercase text-slate-400 m-0">Model Lifecycle Management</p>
           </div>
+          <h1 className="text-4xl md:text-5xl font-extrabold text-slate-800 m-0 tracking-tighter">Engine Retraining</h1>
+        </div>
+        <div className="text-left md:text-right">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1">Active Model Node</p>
+          <span className="badge bg-white text-slate-700 shadow-sm border px-3 py-1 font-bold mono">
+            {activeMetrics?.active_model_version || '—'}
+          </span>
+        </div>
+      </div>
 
-          {pipelineSteps.map((step, i) => (
-            <div key={i} style={{ display: 'flex', gap: 12, padding: '12px 0', borderBottom: i < pipelineSteps.length - 1 ? '1px solid #F1F5F9' : 'none' }}>
-              {stepIcon(step.status)}
-              <div style={{ flex: 1 }}>
-                <p style={{ fontWeight: 600, fontSize: 14, margin: '0 0 2px', color: step.status === 'pending' ? '#94A3B8' : 'var(--color-text)' }}>{step.name}</p>
-                <p style={{ fontSize: 12, color: 'var(--color-text-muted)', margin: 0 }}>{step.desc}</p>
+      <div className="grid grid-cols-1 xl:grid-cols-[1.5fr_1fr] gap-6">
+        
+        {/* LEFT COLUMN: UPLOAD & PIPELINE */}
+        <div className="space-y-6 flex flex-col">
+          
+          {/* UPLOAD CARDS */}
+          <div className="glass-panel p-6 flex flex-col gap-4">
+            <h2 className="text-sm font-bold text-slate-800 m-0 flex items-center gap-2">
+               <span className="w-5 h-5 rounded-md bg-gradient-to-br from-primary-400 to-primary-600 text-white flex items-center justify-center text-[10px] font-black shadow-btn">1</span>
+               Data Ingestion
+            </h2>
+            
+            <div
+              className={`border-2 border-dashed rounded-3xl transition-all cursor-pointer text-center group relative overflow-hidden
+                ${file ? 'border-primary-300 bg-primary-50/30' : 'border-white/60 bg-white/30 hover:border-primary-400 hover:bg-white/50 backdrop-blur-md'}`}
+              style={{ padding: file ? '32px' : '48px' }}
+              onDrop={handleDrop}
+              onDragOver={(e) => e.preventDefault()}
+              onClick={() => document.getElementById('file-input').click()}
+            >
+              <input id="file-input" type="file" accept=".csv,.parquet" onChange={handleFileChange} className="hidden" />
+              
+              {file ? (
+                <div className="flex flex-col items-center relative z-10">
+                  <div className="w-16 h-16 rounded-2xl bg-white shadow-sm flex items-center justify-center mb-4 group-hover:-translate-y-1 transition-transform">
+                    <Upload size={24} className="text-primary-500" />
+                  </div>
+                  <p className="font-extrabold text-slate-800 text-lg mb-1">{file.name}</p>
+                  <p className="text-xs font-bold text-slate-400 mb-4 bg-white/60 px-3 py-1 rounded-full border border-white">{(file.size / (1024 * 1024)).toFixed(1)} MB Data Matrix</p>
+                  <span className="text-[11px] font-bold text-primary-500 uppercase tracking-widest hover:text-primary-600 transition-colors">Click to replace file</span>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center relative z-10">
+                  <div className="w-16 h-16 rounded-2xl bg-white shadow-sm flex items-center justify-center mb-4 group-hover:-translate-y-1 group-hover:shadow-md transition-all">
+                    <Upload size={24} className="text-slate-400 group-hover:text-primary-500 transition-colors" />
+                  </div>
+                  <p className="text-sm font-bold text-slate-600 pb-1 m-0 pointer-events-none">Drag & Drop historical CSV/Parquet</p>
+                  <p className="text-[11px] text-slate-400 tracking-wider uppercase font-bold pointer-events-none">Or click to browse system</p>
+                </div>
+              )}
+            </div>
+
+            {uploadError && (
+              <div className="p-4 bg-red-100/50 backdrop-blur-md border border-red-200 rounded-2xl text-red-600 text-sm font-bold mt-2 shadow-sm flex gap-3 items-center">
+                <XCircle size={18} className="shrink-0" />
+                <p className="m-0 leading-relaxed group-hover:translate-[0]">{uploadError}</p>
               </div>
-              <span className={`badge ${step.status === 'done' ? 'badge-success' : step.status === 'running' ? 'badge-info' : ''}`} style={{ alignSelf: 'center', visibility: step.status === 'pending' ? 'hidden' : 'visible' }}>
-                {step.status === 'done' ? 'Finished' : step.status === 'running' ? 'Running' : ''}
-              </span>
-            </div>
-          ))}
-
-          <div style={{ marginTop: 16 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-              <span style={{ fontSize: 13, fontWeight: 600 }}>Overall Progress</span>
-              <span style={{ fontSize: 13, fontWeight: 600 }}>{progress}%</span>
-            </div>
-            <div style={{ height: 8, background: '#E2E8F0', borderRadius: 4, overflow: 'hidden' }}>
-              <div style={{ height: '100%', width: `${progress}%`, background: trainingStatus === 'failed' ? '#EF4444' : 'var(--color-primary)', borderRadius: 4, transition: 'width 400ms ease' }} />
-            </div>
-          </div>
-
-          {trainingStatus === 'idle' && file && (
-            <button className="btn-primary" style={{ marginTop: 16 }} onClick={startTraining} id="start-training-btn">
-              <Zap size={16} /> Start Training (POST /retrain)
-            </button>
-          )}
-
-          {trainingStatus === 'failed' && (
-            <button className="btn-primary" style={{ marginTop: 16 }} onClick={() => { setTrainingStatus('idle'); setProgress(0); setUploadError(''); }}>
-              Retry Training
-            </button>
-          )}
-        </div>
-
-        {/* Configuration Sidebar */}
-        <div>
-          <div className="card" style={{ marginBottom: 16 }}>
-            <p style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-text-muted)', margin: '0 0 12px' }}>Configuration</p>
-            {[
-              { label: 'Split Ratio', value: '80/20', icon: '📊' },
-              { label: 'Estimators', value: '1500', icon: '⚙️' },
-              { label: 'Max Depth', value: '7', icon: '📏' },
-              { label: 'Sample Size', value: '200,000', icon: '📋' },
-            ].map((c) => (
-              <div key={c.label} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #F1F5F9' }}>
-                <span style={{ fontSize: 13, color: 'var(--color-text)' }}>{c.label}</span>
-                <span className="mono" style={{ fontSize: 13, fontWeight: 600 }}>{c.value}</span>
-              </div>
-            ))}
-          </div>
-
-          <div className="card" style={{ background: '#FFFBEB', border: '1px solid #FDE68A' }}>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-              <AlertCircle size={16} color="#D97706" style={{ flexShrink: 0, marginTop: 2 }} />
-              <p style={{ fontSize: 12, color: '#92400E', margin: 0, lineHeight: 1.5 }}>
-                Training runs in a background thread on the backend. The API returns immediately with a job_id. Model will appear as "candidate" once training completes.
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Section 3: Evaluation & Promotion */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-        <span style={{ width: 28, height: 28, borderRadius: 6, background: 'var(--color-primary)', color: '#FFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700 }}>3</span>
-        <h2 style={{ fontSize: 17, fontWeight: 700, margin: 0 }}>Evaluation & Candidate Promotion</h2>
-      </div>
-
-      <div className="card" style={{ marginBottom: 32 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-          <div>
-            <p style={{ fontWeight: 700, fontSize: 15, margin: '0 0 4px' }}>Active Model: <span className="mono">{activeMetrics?.active_model_version || '—'}</span></p>
-            <p style={{ fontSize: 12, color: 'var(--color-text-muted)', margin: 0 }}>Current production model performance metrics from GET /metrics.</p>
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            {promoteStatus === 'success' ? (
-              <span className="badge badge-success" style={{ padding: '8px 16px' }}>✓ Model Promoted Successfully</span>
-            ) : (
-              <button
-                className="btn-accent"
-                style={{ padding: '8px 20px' }}
-                id="promote-btn"
-                disabled={!activeMetrics?.active_model_version || promoteStatus === 'promoting'}
-                onClick={() => handlePromote(activeMetrics?.active_model_version)}
-              >
-                {promoteStatus === 'promoting' ? (
-                  <Loader size={16} className="spinner" />
-                ) : (
-                  <ArrowDownUp size={16} />
-                )}
-                {promoteStatus === 'promoting' ? 'Promoting...' : 'Promote to Production'}
-              </button>
             )}
           </div>
+
+          {/* PIPELINE CARDS */}
+          <div className="glass-panel p-6 flex flex-col flex-grow">
+             <div className="flex justify-between items-center mb-6">
+                <h2 className="text-sm font-bold text-slate-800 m-0 flex items-center gap-2">
+                   <span className="w-5 h-5 rounded-md bg-gradient-to-br from-primary-400 to-primary-600 text-white flex items-center justify-center text-[10px] font-black shadow-btn">2</span>
+                   Training Execution
+                </h2>
+                <span className={`badge border-none px-3 py-1 shadow-sm ${
+                  trainingStatus === 'running' || trainingStatus === 'uploading' ? 'bg-white text-primary-600' :
+                  trainingStatus === 'finished' ? 'bg-white text-accent-600' :
+                  trainingStatus === 'failed' ? 'bg-white text-red-600' : 'bg-white/40 text-slate-400'
+                }`}>
+                  {trainingStatus.toUpperCase()} {jobId && <span className="mono font-bold text-[9px] opacity-60 ml-2">#{jobId.slice(0, 6)}</span>}
+                </span>
+             </div>
+
+             {/* Stepper */}
+             <div className="relative pl-3 flex-grow pb-4">
+                {/* Stepper connecting line */}
+                <div className="absolute left-[23px] top-4 bottom-8 w-0.5 bg-gradient-to-b from-primary-300 to-transparent" />
+                
+                <div className="space-y-6 relative z-10">
+                  {pipelineSteps.map((step, i) => (
+                    <div key={i} className={`flex gap-4 items-start transition-opacity duration-500 ${step.status === 'pending' ? 'opacity-40' : 'opacity-100'}`}>
+                      <div className="shrink-0 pt-0.5 bg-background">{stepIcon(step.status)}</div>
+                      <div className="flex-grow">
+                        <p className={`font-extrabold text-sm m-0 mb-1 ${step.status === 'pending' ? 'text-slate-400' : 'text-slate-800'}`}>{step.name}</p>
+                        <p className={`text-xs m-0 leading-relaxed font-medium ${step.status === 'pending' ? 'text-slate-400' : 'text-slate-500'}`}>{step.desc}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+             </div>
+
+             <div className="mt-auto pt-6 border-t border-white/50">
+               {trainingStatus === 'idle' && file ? (
+                 <button className="btn-primary shadow-glow-primary" onClick={startTraining} id="start-training-btn">
+                   <Zap size={16} /> Execute Training Pipeline
+                 </button>
+               ) : trainingStatus === 'failed' ? (
+                 <button className="btn-secondary text-red-500 border-red-200 hover:bg-white" onClick={() => { setTrainingStatus('idle'); setProgress(0); setUploadError(''); }}>
+                   Reset & Retry
+                 </button>
+               ) : (
+                 <div className="w-full">
+                    <div className="flex justify-between items-center mb-2">
+                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Synthesis Progress</span>
+                       <span className="text-xs font-bold text-slate-700 mono">{progress}%</span>
+                    </div>
+                    <div className="h-3 bg-white/40 backdrop-blur-md rounded-full overflow-hidden border border-white shadow-inner">
+                      <div className={`h-full transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] rounded-full ${trainingStatus === 'failed' ? 'bg-red-500' : 'bg-gradient-to-r from-primary-400 to-primary-600'}`} style={{ width: `${progress}%` }} />
+                    </div>
+                 </div>
+               )}
+             </div>
+          </div>
         </div>
 
-        {promoteError && (
-          <div style={{ padding: '10px 14px', background: '#FEF2F2', borderRadius: 6, color: '#DC2626', fontSize: 13, marginBottom: 16 }}>
-            {promoteError}
+        {/* RIGHT COLUMN: CONFIG & PROMOTION */}
+        <div className="space-y-6 flex flex-col">
+          
+          {/* Config Block */}
+          <div className="glass-panel p-6 shadow-sm">
+             <h2 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-4 pb-4 border-b border-white/50">Neural Architecture Spec</h2>
+             <div className="space-y-1">
+                {[
+                  { label: 'Validation Split', value: '80/20' },
+                  { label: 'Decision Trees', value: '1500' },
+                  { label: 'Tree Depth Max', value: '7' },
+                  { label: 'Data Row Cap', value: '200,000' },
+                ].map((c, i) => (
+                  <div key={c.label} className={`flex justify-between py-3 ${i < 3 ? 'border-b border-white/40' : ''}`}>
+                    <span className="text-xs font-bold text-slate-500">{c.label}</span>
+                    <span className="mono text-xs font-bold text-slate-700">{c.value}</span>
+                  </div>
+                ))}
+             </div>
           </div>
-        )}
 
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Metric</th>
-              <th>Active Production</th>
-              <th>Target</th>
-              <th style={{ textAlign: 'right' }}>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {[
-              {
-                metric: 'Mean Absolute Error (MAE)',
-                active: activeMetrics?.mae ? `${activeMetrics.mae.toFixed(1)} sec` : '—',
-                target: '≤ 180 sec',
-                pass: activeMetrics?.mae != null && activeMetrics.mae <= 180,
-              },
-              {
-                metric: 'Root Mean Square Error (RMSE)',
-                active: activeMetrics?.rmse ? `${activeMetrics.rmse.toFixed(1)} sec` : '—',
-                target: '≤ 250 sec',
-                pass: activeMetrics?.rmse != null && activeMetrics.rmse <= 250,
-              },
-              {
-                metric: 'R² Score',
-                active: activeMetrics?.r2_score ? activeMetrics.r2_score.toFixed(3) : '—',
-                target: '≥ 0.80',
-                pass: activeMetrics?.r2_score != null && activeMetrics.r2_score >= 0.80,
-              },
-            ].map((row) => (
-              <tr key={row.metric}>
-                <td style={{ fontWeight: 500 }}>{row.metric}</td>
-                <td className="mono" style={{ fontWeight: 700 }}>{row.active}</td>
-                <td style={{ color: 'var(--color-text-muted)' }}>{row.target}</td>
-                <td style={{ textAlign: 'right' }}>
-                  {row.active === '—' ? (
-                    <span style={{ color: 'var(--color-text-muted)' }}>—</span>
-                  ) : row.pass ? (
-                    <span style={{ color: 'var(--color-accent)', fontWeight: 600 }}>✓ Pass</span>
-                  ) : (
-                    <span style={{ color: '#EF4444', fontWeight: 600 }}>✗ Below Target</span>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+          <div className="bg-amber-100/50 backdrop-blur-sm border border-amber-200/50 rounded-3xl p-6 shadow-sm">
+             <div className="flex gap-3 items-start">
+                <AlertCircle size={20} className="text-amber-500 shrink-0 mt-0.5" />
+                <p className="text-xs text-amber-700 m-0 leading-relaxed font-bold">
+                  Training involves asynchronous tensor operations. The engine evaluates candidate models against production targets before enabling promotion.
+                </p>
+             </div>
+          </div>
+          
+          {/* Promotion Block */}
+          <div className="glass-panel p-6 flex-grow flex flex-col justify-between overflow-hidden relative group">
+             <div className="absolute top-0 right-0 w-32 h-32 bg-accent-400/10 rounded-bl-full pointer-events-none group-hover:scale-110 transition-transform duration-700" />
+             
+             <div className="relative z-10">
+                <h2 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-6">Candidate Assessment</h2>
+                
+                <div className="space-y-4 mb-8">
+                  {[
+                    {
+                      metric: 'MAE',
+                      active: activeMetrics?.mae ? activeMetrics.mae.toFixed(1) : '—',
+                      target: '≤ 180s',
+                      pass: activeMetrics?.mae != null && activeMetrics.mae <= 180,
+                    },
+                    {
+                      metric: 'RMSE',
+                      active: activeMetrics?.rmse ? activeMetrics.rmse.toFixed(1) : '—',
+                      target: '≤ 250s',
+                      pass: activeMetrics?.rmse != null && activeMetrics.rmse <= 250,
+                    },
+                    {
+                      metric: 'R² Score',
+                      active: activeMetrics?.r2_score ? activeMetrics.r2_score.toFixed(3) : '—',
+                      target: '≥ 0.80',
+                      pass: activeMetrics?.r2_score != null && activeMetrics.r2_score >= 0.80,
+                    },
+                  ].map((row) => (
+                    <div key={row.metric} className="flex flex-col gap-1 p-3 bg-white/40 rounded-2xl border border-white">
+                       <div className="flex justify-between items-center">
+                          <span className="text-xs font-extrabold text-slate-800">{row.metric}</span>
+                          {row.active === '—' ? (
+                            <span className="text-slate-300 font-bold text-[10px]">—</span>
+                          ) : row.pass ? (
+                            <span className="text-accent-600 text-[10px] uppercase font-bold flex items-center gap-1"><CheckCircle2 size={12}/> Pass</span>
+                          ) : (
+                            <span className="text-red-500 text-[10px] uppercase font-bold flex items-center gap-1"><XCircle size={12}/> Fail</span>
+                          )}
+                       </div>
+                       <div className="flex justify-between items-end">
+                          <span className="mono text-xs font-bold text-slate-600">{row.active}</span>
+                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">TGT: {row.target}</span>
+                       </div>
+                    </div>
+                  ))}
+                </div>
+             </div>
 
-        <div style={{ marginTop: 16, padding: '12px 16px', background: '#F0FDF4', borderRadius: 6, display: 'flex', gap: 8, alignItems: 'center' }}>
-          <CheckCircle2 size={16} color="var(--color-accent)" />
-          <p style={{ fontSize: 13, color: '#166534', margin: 0 }}>
-            Metrics are fetched live from the backend. After training completes, refresh this page to see the new candidate model's scores.
-          </p>
+             <div className="relative z-10">
+                {promoteError && (
+                  <div className="mb-4 p-3 bg-red-100/50 backdrop-blur-md border border-red-200 rounded-2xl text-red-600 text-[11px] font-bold text-center">
+                    {promoteError}
+                  </div>
+                )}
+                
+                {promoteStatus === 'success' ? (
+                  <span className="btn-accent opacity-100 cursor-default bg-gradient-to-r from-accent-500 to-accent-600">
+                    <CheckCircle2 size={16} /> Deployed to Production
+                  </span>
+                ) : (
+                  <button
+                    className="btn-accent"
+                    id="promote-btn"
+                    disabled={!candidateVersion || promoteStatus === 'promoting'}
+                    onClick={() => handlePromote(candidateVersion)}
+                  >
+                    {promoteStatus === 'promoting' ? (
+                      <Loader size={16} className="animate-spin" />
+                    ) : (
+                      <ArrowDownUp size={16} />
+                    )}
+                    {promoteStatus === 'promoting' ? 'Executing Swap...' : 'Deploy to Production'}
+                  </button>
+                )}
+             </div>
+          </div>
         </div>
       </div>
     </div>

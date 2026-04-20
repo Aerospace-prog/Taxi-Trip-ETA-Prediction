@@ -73,6 +73,12 @@ class LocationClusterEncoder(BaseEstimator, TransformerMixin):
         pickup_coords = X[["pickup_latitude", "pickup_longitude"]].values
         dropoff_coords = X[["dropoff_latitude", "dropoff_longitude"]].values
 
+        n_samples = len(X)
+        if n_samples < self.n_clusters:
+            # Dynamically adjust to avoid ValueError on small datasets
+            self.pickup_kmeans = KMeans(n_clusters=max(1, n_samples), random_state=42, n_init='auto')
+            self.dropoff_kmeans = KMeans(n_clusters=max(1, n_samples), random_state=42, n_init='auto')
+
         self.pickup_kmeans.fit(pickup_coords)
         self.dropoff_kmeans.fit(dropoff_coords)
         return self

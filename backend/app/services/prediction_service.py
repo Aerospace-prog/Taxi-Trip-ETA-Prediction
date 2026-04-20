@@ -24,6 +24,7 @@ def log_prediction(
     predicted_seconds: int,
     model_version: str,
     latency_ms: int,
+    user_id: uuid.UUID = None,
 ) -> TripPrediction:
     """Log a prediction record to the database inside a transaction."""
     record = TripPrediction(
@@ -36,6 +37,7 @@ def log_prediction(
         predicted_duration_seconds=predicted_seconds,
         model_version=model_version,
         system_latency_ms=latency_ms,
+        user_id=user_id,
     )
     with db.begin_nested():
         db.add(record)
@@ -47,11 +49,16 @@ def get_prediction_history(
     db: Session,
     page: int = 1,
     limit: int = 20,
+    user_id: uuid.UUID = None,
 ):
-    """Retrieve paginated prediction history."""
-    total = db.query(TripPrediction).count()
+    """Retrieve paginated prediction history, optionally filtered by user."""
+    query = db.query(TripPrediction)
+    if user_id:
+        query = query.filter(TripPrediction.user_id == user_id)
+        
+    total = query.count()
     records = (
-        db.query(TripPrediction)
+        query
         .order_by(TripPrediction.created_at.desc())
         .offset((page - 1) * limit)
         .limit(limit)

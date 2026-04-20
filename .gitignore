@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Build artifacts
+frontend/dist/
+*.pkl
+
+# Environment files (secrets)
+backend/.env
+backend/.env.production
+.env
+.env.production
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Agent workspace (optional)
+.agent/
+
+# Docker volumes
+postgres_data/
+model_data/
+
+# Logs
+*.log

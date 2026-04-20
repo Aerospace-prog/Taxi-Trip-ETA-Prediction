@@ -5,6 +5,7 @@ from typing import Optional
 class RetrainResponse(BaseModel):
     job_id: str
     status: str
+    candidate_version: Optional[str] = None
 
 
 class PromoteRequest(BaseModel):

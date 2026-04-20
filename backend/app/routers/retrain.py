@@ -127,6 +127,7 @@ async def retrain_model_endpoint(
     return RetrainResponse(
         job_id=job.job_id,
         status="running",
+        candidate_version=version,
     )
 
 

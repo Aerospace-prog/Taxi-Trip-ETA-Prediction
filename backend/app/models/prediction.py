@@ -26,6 +26,12 @@ class TripPrediction(Base):
         ForeignKey("model_metadata.version"),
         nullable=False,
     )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=True,
+        index=True,
+    )
     system_latency_ms: Mapped[int] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 

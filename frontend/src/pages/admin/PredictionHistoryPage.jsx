@@ -1,225 +1,143 @@
-import { useState, useEffect, useRef } from 'react';
-import { Clock, Search, Filter, RefreshCw, Download, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { DownloadCloud, History, Search, ChevronLeft, ChevronRight, Hash } from 'lucide-react';
 import api from '../../services/api';
 
-const PAGE_SIZE = 10;
-
 export default function PredictionHistoryPage() {
-  const [records, setRecords] = useState([]);
-  const [totalRecords, setTotalRecords] = useState(0);
+  const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
-  const [search, setSearch] = useState('');
-  const [error, setError] = useState('');
+  const [totalPages, setTotalPages] = useState(1);
 
   useEffect(() => {
-    fetchHistory();
+    fetchHistory(page);
   }, [page]);
 
-  const fetchHistory = async () => {
+  const fetchHistory = async (pageNumber) => {
     setLoading(true);
-    setError('');
     try {
-      const res = await api.get('/history', { params: { page, limit: PAGE_SIZE } });
-      setRecords(res.data?.records || []);
-      setTotalRecords(res.data?.total_records || 0);
-    } catch (err) {
-      setError(err.response?.data?.detail || 'Failed to load prediction history.');
-      setRecords([]);
-      setTotalRecords(0);
+      const res = await api.get('/history', { params: { page: pageNumber, limit: 12 } });
+      setHistory(res.data.records);
+      setTotalPages(res.data.total_pages);
+    } catch {
+      setHistory([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const totalPages = Math.ceil(totalRecords / PAGE_SIZE) || 1;
-
-  // Client-side search filter on request_id
-  const filtered = search
-    ? records.filter((r) => r.request_id?.toLowerCase().includes(search.toLowerCase()))
-    : records;
-
-  const handleExportCSV = () => {
-    if (filtered.length === 0) return;
-    const headers = ['Request ID', 'Pickup Lat', 'Pickup Lng', 'Dropoff Lat', 'Dropoff Lng', 'Pickup Time', 'Duration (min)', 'Model', 'Latency (ms)', 'Created'];
-    const rows = filtered.map((r) => [
-      r.request_id,
-      r.pickup_latitude,
-      r.pickup_longitude,
-      r.dropoff_latitude,
-      r.dropoff_longitude,
-      r.pickup_datetime,
-      r.predicted_duration_minutes,
-      r.model_version,
-      r.system_latency_ms || '',
-      r.created_at,
-    ]);
-    const csv = [headers, ...rows].map((row) => row.join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `prediction_history_page${page}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const renderPageButtons = () => {
-    const buttons = [];
-    const maxVisible = 5;
-    let start = Math.max(1, page - Math.floor(maxVisible / 2));
-    let end = Math.min(totalPages, start + maxVisible - 1);
-    if (end - start + 1 < maxVisible) start = Math.max(1, end - maxVisible + 1);
-
-    for (let p = start; p <= end; p++) {
-      buttons.push(
-        <button key={p} onClick={() => setPage(p)} style={{
-          width: 32, height: 32, borderRadius: 4, border: p === page ? 'none' : '1px solid var(--color-border)',
-          background: p === page ? '#1E293B' : '#FFF', color: p === page ? '#FFF' : 'var(--color-text)',
-          fontSize: 13, fontWeight: 600, cursor: 'pointer',
-        }}>{p}</button>
-      );
+  const downloadCsv = async () => {
+    try {
+      const res = await api.get('/history', { params: { page: 1, limit: 1000 } });
+      const csvContent = "data:text/csv;charset=utf-8," + 
+        "Request ID,Time,Pickup Lat,Pickup Lng,Dropoff Lat,Dropoff Lng,Predicted Seconds\n" +
+        res.data.records.map(r => `${r.request_id},${r.created_at},${r.pickup_latitude},${r.pickup_longitude},${r.dropoff_latitude},${r.dropoff_longitude},${r.predicted_duration_seconds}`).join("\n");
+      
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `taxipredict-export-${new Date().toISOString().slice(0,10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error('Export error:', e);
     }
-    return buttons;
   };
 
   return (
-    <div className="animate-fade-in">
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-        <Clock size={22} />
-        <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0 }}>Prediction History</h1>
-      </div>
-      <p style={{ fontSize: 14, color: 'var(--color-text-muted)', margin: '0 0 24px' }}>View and audit all taxi trip duration predictions generated by the system.</p>
-
-      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-        {/* Inference Log Header */}
-        <div style={{ padding: '20px 20px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <div>
-            <h3 style={{ fontSize: 15, fontWeight: 700, margin: '0 0 4px' }}>Inference Log</h3>
-            <p style={{ fontSize: 12, color: 'var(--color-text-muted)', margin: 0 }}>Records from the <code className="mono" style={{ padding: '1px 6px', background: '#F1F5F9', borderRadius: 3, fontSize: 11 }}>trip_predictions</code> table — Page {page} of {totalPages}.</p>
+    <div className="animate-fade-in pb-12 w-full max-w-6xl mx-auto space-y-6 lg:mt-4">
+      
+      <header className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 mb-6">
+        <div>
+          <div className="flex items-center gap-3 mb-3">
+             <div className="p-2.5 rounded-2xl bg-white shadow-sm border border-white">
+                <History size={24} className="text-primary-500" />
+             </div>
+             <p className="text-[11px] font-bold tracking-widest uppercase text-slate-400 m-0">Audit Vault</p>
           </div>
-          <span className="badge badge-success" style={{ padding: '4px 10px' }}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10B981', display: 'inline-block', marginRight: 4 }} />
-            Live Data
-          </span>
+          <h1 className="text-4xl md:text-5xl font-extrabold text-slate-800 m-0 tracking-tighter">Prediction History</h1>
+        </div>
+        
+        <button 
+          onClick={downloadCsv} 
+          className="btn-secondary whitespace-nowrap px-4 py-2 text-sm !rounded-xl"
+        >
+          <DownloadCloud size={16} /> Export CSV Buffer
+        </button>
+      </header>
+
+      <div className="glass-panel p-0 flex flex-col min-h-[500px]">
+        {/* Table Toolbar */}
+        <div className="p-4 border-b border-white/40 bg-white/30 flex justify-between items-center">
+          <div className="relative w-64 hidden sm:block">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input type="text" placeholder="Search Request ID..." disabled className="glass-input !py-2 !rounded-xl !text-xs pl-9 !bg-white/50 cursor-not-allowed opacity-60" />
+          </div>
+          <div className="flex items-center gap-1.5 ml-auto">
+             <span className="text-[10px] uppercase tracking-widest font-bold text-slate-400 mr-2">Page {page} of {totalPages || 1}</span>
+             <button 
+               onClick={() => setPage(p => Math.max(1, p - 1))}
+               disabled={page === 1}
+               className="p-1.5 rounded-lg bg-white/60 hover:bg-white text-slate-600 disabled:opacity-30 disabled:cursor-not-allowed shadow-sm border border-white transition-all cursor-pointer"
+             >
+               <ChevronLeft size={16} />
+             </button>
+             <button 
+               onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+               disabled={page >= totalPages}
+               className="p-1.5 rounded-lg bg-white/60 hover:bg-white text-slate-600 disabled:opacity-30 disabled:cursor-not-allowed shadow-sm border border-white transition-all cursor-pointer"
+             >
+               <ChevronRight size={16} />
+             </button>
+          </div>
         </div>
 
-        {/* Search Bar */}
-        <div style={{ padding: '0 20px 16px', display: 'flex', gap: 10 }}>
-          <div style={{ position: 'relative', flex: 1, maxWidth: 320 }}>
-            <Search size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
-            <input
-              id="search-history"
-              className="input-field"
-              placeholder="Filter by Request ID..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              style={{ paddingLeft: 36 }}
-            />
-          </div>
-          <div style={{ flex: 1 }} />
-          <button className="btn-secondary" style={{ width: 'auto', padding: '8px 16px', gap: 6 }} onClick={fetchHistory}>
-            <RefreshCw size={14} /> Refresh
-          </button>
-          <button className="btn-secondary" style={{ width: 'auto', padding: '8px 16px', gap: 6 }} onClick={handleExportCSV}>
-            <Download size={14} /> Export CSV
-          </button>
-        </div>
-
-        {/* Error */}
-        {error && (
-          <div style={{ padding: '12px 20px', background: '#FEF2F2', color: '#DC2626', fontSize: 13 }}>
-            {error}
-          </div>
-        )}
-
-        {/* Table */}
-        {loading ? (
-          <div style={{ padding: 40, textAlign: 'center', color: 'var(--color-text-muted)' }}>Loading predictions...</div>
-        ) : (
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Reference & Time</th>
-                <th>Route Coordinates</th>
-                <th style={{ textAlign: 'center' }}>Prediction</th>
-                <th>Model Version</th>
-                <th style={{ textAlign: 'right' }}>Latency</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.length === 0 ? (
+        <div className="overflow-x-auto flex-grow p-2">
+          {loading ? (
+            <div className="flex items-center justify-center h-64">
+               <span className="px-4 py-2 rounded-xl bg-white/50 text-xs font-bold text-slate-400 animate-pulse">Syncing Database...</span>
+            </div>
+          ) : history.length === 0 ? (
+            <div className="flex items-center justify-center h-64">
+               <span className="px-4 py-2 rounded-xl bg-white/50 text-xs font-bold text-slate-400">No telemetry records found.</span>
+            </div>
+          ) : (
+            <table className="data-table">
+              <thead>
                 <tr>
-                  <td colSpan={5} style={{ textAlign: 'center', padding: 32, color: 'var(--color-text-muted)' }}>
-                    {search ? 'No matching records found.' : 'No prediction history available.'}
-                  </td>
+                  <th className="!bg-transparent !border-b-white/50 pl-6"><Hash size={12} className="inline mr-1"/> ID</th>
+                  <th className="!bg-transparent !border-b-white/50">Timestamp</th>
+                  <th className="!bg-transparent !border-b-white/50">Origin Vector</th>
+                  <th className="!bg-transparent !border-b-white/50">Destination Vector</th>
+                  <th className="!bg-transparent !border-b-white/50 text-right pr-6">Calculated ETA</th>
                 </tr>
-              ) : filtered.map((p) => (
-                <tr key={p.request_id}>
-                  <td>
-                    <p className="mono" style={{ fontWeight: 700, margin: '0 0 2px', fontSize: 13 }}>{p.request_id?.slice(0, 12)}...</p>
-                    <p style={{ fontSize: 12, color: 'var(--color-text-muted)', margin: 0 }}>📅 {new Date(p.created_at).toLocaleString()}</p>
-                  </td>
-                  <td>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      <div>
-                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#3B82F6', display: 'inline-block', marginRight: 8 }} />
-                        <span className="mono" style={{ fontSize: 12 }}>{p.pickup_latitude?.toFixed(4)}, {p.pickup_longitude?.toFixed(4)}</span>
-                      </div>
-                      <div>
-                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#EF4444', display: 'inline-block', marginRight: 8 }} />
-                        <span className="mono" style={{ fontSize: 12 }}>{p.dropoff_latitude?.toFixed(4)}, {p.dropoff_longitude?.toFixed(4)}</span>
-                      </div>
-                    </div>
-                  </td>
-                  <td style={{ textAlign: 'center' }}>
-                    <div style={{ display: 'inline-block', padding: '8px 16px', border: '1px solid var(--color-border)', borderRadius: 6 }}>
-                      <span style={{ fontSize: 20, fontWeight: 800 }}>{p.predicted_duration_minutes?.toFixed(1)}</span>
-                      <br />
-                      <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Minutes</span>
-                    </div>
-                  </td>
-                  <td>
-                    <span className="mono" style={{ padding: '4px 10px', background: '#F1F5F9', borderRadius: 4, fontSize: 12 }}>{p.model_version}</span>
-                  </td>
-                  <td style={{ textAlign: 'right' }}>
-                    <span className="mono" style={{ fontSize: 13 }}>{p.system_latency_ms || '—'}ms</span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-
-        {/* Pagination */}
-        <div style={{ padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--color-border)' }}>
-          <span style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
-            Showing <strong>{(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, totalRecords)}</strong> of <strong>{totalRecords}</strong> entries
-          </span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <button
-              onClick={() => setPage(Math.max(1, page - 1))}
-              disabled={page === 1}
-              className="btn-secondary"
-              style={{ width: 32, height: 32, padding: 0, opacity: page === 1 ? 0.4 : 1 }}
-            ><ChevronLeft size={16} /></button>
-            {renderPageButtons()}
-            <button
-              onClick={() => setPage(Math.min(totalPages, page + 1))}
-              disabled={page === totalPages}
-              className="btn-secondary"
-              style={{ width: 32, height: 32, padding: 0, opacity: page === totalPages ? 0.4 : 1 }}
-            ><ChevronRight size={16} /></button>
-          </div>
+              </thead>
+              <tbody>
+                {history.map((record) => (
+                  <tr key={record.request_id} className="group hover:bg-white/40">
+                    <td className="pl-6 !py-3">
+                       <span className="px-2 py-1 bg-white/60 rounded border border-white text-[11px] font-bold text-slate-500 inline-block group-hover:border-primary-200 transition-colors mono">
+                          {record.request_id?.slice(0, 8)}...
+                       </span>
+                    </td>
+                    <td className="text-xs font-medium text-slate-500 !py-3">
+                      {new Date(record.created_at + (!record.created_at.includes('Z') ? 'Z' : '')).toLocaleString()}
+                    </td>
+                    <td className="mono text-xs text-slate-400 !py-3">[{record.pickup_latitude.toFixed(3)}, {record.pickup_longitude.toFixed(3)}]</td>
+                    <td className="mono text-xs text-slate-400 !py-3">[{record.dropoff_latitude.toFixed(3)}, {record.dropoff_longitude.toFixed(3)}]</td>
+                    <td className="text-right !py-3 pr-6">
+                      <span className="font-bold text-slate-700 bg-white shadow-sm px-2.5 py-1 rounded-md text-sm border border-white group-hover:border-primary-100 transition-colors">
+                        {(record.predicted_duration_minutes).toFixed(1)} <span className="text-[10px] text-slate-400 uppercase tracking-widest pl-0.5">Min</span>
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
-      </div>
-
-      {/* Footer Stats */}
-      <div style={{ display: 'flex', gap: 24, marginTop: 16, fontSize: 12, color: 'var(--color-text-muted)' }}>
-        <span>Total Records: <strong className="mono">{totalRecords}</strong></span>
-        <span>Page: <strong>{page}/{totalPages}</strong></span>
-        <span style={{ marginLeft: 'auto', fontWeight: 600 }}>SOURCE: GET /history</span>
       </div>
     </div>
   );

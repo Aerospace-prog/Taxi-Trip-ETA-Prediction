@@ -50,6 +50,7 @@ def predict_trip_duration(
         predicted_seconds=predicted_seconds,
         model_version=model_version,
         latency_ms=latency_ms,
+        user_id=current_user.id,
     )
 
     return PredictResponse(
@@ -68,8 +69,10 @@ def get_history(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Get paginated prediction history."""
-    total, records = get_prediction_history(db, page, limit)
+    """Get paginated prediction history. Admins see all, dispatchers see own."""
+    # If admin, fetch all (user_id=None). If dispatcher, filter by their own id.
+    filter_user_id = None if current_user.role == "admin" else current_user.id
+    total, records = get_prediction_history(db, page, limit, user_id=filter_user_id)
 
     return HistoryResponse(
         total_records=total,

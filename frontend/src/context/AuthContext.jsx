@@ -1,23 +1,16 @@
-import { createContext, useContext, useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+/* eslint-disable react-refresh/only-export-components */
+import { createContext, useContext, useState } from 'react';
 import api from '../services/api';
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
-  const [token, setToken] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const savedToken = localStorage.getItem('taxi_token');
-    const savedUser = localStorage.getItem('taxi_user');
-    if (savedToken && savedUser) {
-      setToken(savedToken);
-      setUser(JSON.parse(savedUser));
-    }
-    setLoading(false);
-  }, []);
+  const [user, setUser] = useState(() => {
+    const saved = localStorage.getItem('taxi_user');
+    return saved ? JSON.parse(saved) : null;
+  });
+  const [token, setToken] = useState(() => localStorage.getItem('taxi_token'));
+  const loading = false;
 
   const login = async (email, password) => {
     const formData = new URLSearchParams();
@@ -38,6 +31,17 @@ export function AuthProvider({ children }) {
     return userData;
   };
 
+  const registerUser = async (email, password) => {
+    const res = await api.post('/register', { email, password });
+    const { access_token, role, email: userEmail } = res.data;
+    const userData = { email: userEmail || email, role };
+    setToken(access_token);
+    setUser(userData);
+    localStorage.setItem('taxi_token', access_token);
+    localStorage.setItem('taxi_user', JSON.stringify(userData));
+    return userData;
+  };
+
   const logout = () => {
     setToken(null);
     setUser(null);
@@ -49,7 +53,7 @@ export function AuthProvider({ children }) {
   const isAdmin = user?.role === 'admin';
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, isAuthenticated, isAdmin, login, logout }}>
+    <AuthContext.Provider value={{ user, token, loading, isAuthenticated, isAdmin, login, registerUser, logout }}>
       {children}
     </AuthContext.Provider>
   );
