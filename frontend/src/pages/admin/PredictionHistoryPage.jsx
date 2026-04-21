@@ -28,15 +28,30 @@ export default function PredictionHistoryPage() {
   const downloadCsv = async () => {
     try {
       const res = await api.get('/history', { params: { page: 1, limit: 1000 } });
-      const csvContent = "data:text/csv;charset=utf-8," + 
-        "Request ID,Time,Pickup Lat,Pickup Lng,Dropoff Lat,Dropoff Lng,Predicted Seconds\n" +
-        res.data.records.map(r => `${r.request_id},${r.pickup_datetime},${r.pickup_latitude},${r.pickup_longitude},${r.dropoff_latitude},${r.dropoff_longitude},${r.predicted_duration_seconds}`).join("\n");
       
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      // 1. Define Headers
+      const headers = ["Request ID", "Pickup Time", "Pickup Lat", "Pickup Lng", "Dropoff Lat", "Dropoff Lng", "ETA (Sec)", "Calculated ETA (Min)"];
+      
+      // 2. Map Rows
+      const rows = res.data.records.map(r => [
+        r.request_id,
+        new Date(r.pickup_datetime).toLocaleString(),
+        r.pickup_latitude,
+        r.pickup_longitude,
+        r.dropoff_latitude,
+        r.dropoff_longitude,
+        r.predicted_duration_seconds,
+        (r.predicted_duration_seconds / 60).toFixed(1)
+      ].join(","));
+
+      // 3. Combine into single CSV string (No prefix here!)
+      const csvString = [headers.join(","), ...rows].join("\n");
+      
+      const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.setAttribute("href", url);
-      link.setAttribute("download", `taxipredict-export-${new Date().toISOString().slice(0,10)}.csv`);
+      link.setAttribute("download", `taxipredict-audit-export-${new Date().toISOString().slice(0,10)}.csv`);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
