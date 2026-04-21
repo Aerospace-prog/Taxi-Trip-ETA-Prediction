@@ -26,32 +26,11 @@ services:
       - ./backend/.env.production
     volumes:
       - model_data:/app/models
+    ports:
+      - "127.0.0.1:8000:8000"
     depends_on:
       db:
         condition: service_healthy
-    restart: always
-    # No host volume mount — uses baked-in image code
-    # No port 8000 exposed externally — only through Nginx
-
-  # React Frontend (Nginx-served SPA)
-  frontend:
-    build: ./frontend
-    container_name: taxi_frontend
-    depends_on:
-      - backend
-    restart: always
-
-  # Nginx Reverse Proxy (public-facing entrypoint)
-  nginx:
-    image: nginx:stable-alpine
-    container_name: taxi_nginx
-    ports:
-      - "80:80"
-    volumes:
-      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
-    depends_on:
-      - frontend
-      - backend
     restart: always
 
 volumes:
