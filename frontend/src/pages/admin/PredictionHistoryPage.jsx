@@ -30,7 +30,7 @@ export default function PredictionHistoryPage() {
       const res = await api.get('/history', { params: { page: 1, limit: 1000 } });
       const csvContent = "data:text/csv;charset=utf-8," + 
         "Request ID,Time,Pickup Lat,Pickup Lng,Dropoff Lat,Dropoff Lng,Predicted Seconds\n" +
-        res.data.records.map(r => `${r.request_id},${r.created_at},${r.pickup_latitude},${r.pickup_longitude},${r.dropoff_latitude},${r.dropoff_longitude},${r.predicted_duration_seconds}`).join("\n");
+        res.data.records.map(r => `${r.request_id},${r.pickup_datetime},${r.pickup_latitude},${r.pickup_longitude},${r.dropoff_latitude},${r.dropoff_longitude},${r.predicted_duration_seconds}`).join("\n");
       
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
@@ -123,7 +123,7 @@ export default function PredictionHistoryPage() {
                        </span>
                     </td>
                     <td className="text-xs font-medium text-slate-500 !py-3">
-                      {new Date(record.created_at + (!record.created_at.includes('Z') ? 'Z' : '')).toLocaleString()}
+                      {new Date(record.pickup_datetime + (!record.pickup_datetime.includes('Z') ? 'Z' : '')).toLocaleString()}
                     </td>
                     <td className="mono text-xs text-slate-400 !py-3">[{record.pickup_latitude.toFixed(3)}, {record.pickup_longitude.toFixed(3)}]</td>
                     <td className="mono text-xs text-slate-400 !py-3">[{record.dropoff_latitude.toFixed(3)}, {record.dropoff_longitude.toFixed(3)}]</td>

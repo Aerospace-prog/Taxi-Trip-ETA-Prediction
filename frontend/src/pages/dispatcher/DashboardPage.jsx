@@ -158,7 +158,7 @@ export default function DashboardPage() {
                           {p.request_id?.slice(0, 8)}
                        </span>
                     </td>
-                    <td className="text-xs font-medium text-slate-500 !py-3">{new Date(p.created_at).toLocaleTimeString()}</td>
+                    <td className="text-xs font-medium text-slate-500 !py-3">{new Date(p.pickup_datetime).toLocaleTimeString()}</td>
                     <td className="text-right text-lg font-extrabold text-slate-800 !py-3">{formatDuration(p.predicted_duration_seconds)}</td>
                     <td className="text-right !py-3">
                       <CheckCircle2 size={16} className="inline text-accent-500 drop-shadow-sm" />
