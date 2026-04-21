@@ -138,7 +138,7 @@ export default function PredictionHistoryPage() {
                        </span>
                     </td>
                     <td className="text-xs font-medium text-slate-500 !py-3">
-                      {new Date(record.pickup_datetime + (!record.pickup_datetime.includes('Z') ? 'Z' : '')).toLocaleString()}
+                      {new Date(record.pickup_datetime).toLocaleString()}
                     </td>
                     <td className="mono text-xs text-slate-400 !py-3">[{record.pickup_latitude.toFixed(3)}, {record.pickup_longitude.toFixed(3)}]</td>
                     <td className="mono text-xs text-slate-400 !py-3">[{record.dropoff_latitude.toFixed(3)}, {record.dropoff_longitude.toFixed(3)}]</td>
