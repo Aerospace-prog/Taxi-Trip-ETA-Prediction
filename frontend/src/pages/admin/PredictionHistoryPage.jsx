@@ -17,7 +17,7 @@ export default function PredictionHistoryPage() {
     try {
       const res = await api.get('/history', { params: { page: pageNumber, limit: 12 } });
       setHistory(res.data.records);
-      setTotalPages(res.data.total_pages);
+      setTotalPages(Math.ceil(res.data.total_records / 12) || 1);
     } catch {
       setHistory([]);
     } finally {
