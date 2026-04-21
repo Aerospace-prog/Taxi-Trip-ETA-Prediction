@@ -17,11 +17,11 @@ app = FastAPI(
 # CORS – allow React dev server
 app.add_middleware(
     CORSMiddleware,
+    allow_origin_regex=r"https://.*\.(vercel\.app|netlify\.app)",
     allow_origins=[
         "http://localhost:3000",
         "http://localhost:5173",
         "https://taxi-predict.duckdns.org",
-        "https://taxi-trip-eta-prediction.vercel.app"
     ],
     allow_credentials=True,
     allow_methods=["*"],
