@@ -21,7 +21,7 @@ app.add_middleware(
         "http://localhost:3000",
         "http://localhost:5173",
         "https://taxi-predict.duckdns.org",
-        "https://*.vercel.app"
+        "https://taxi-trip-eta-prediction.vercel.app"
     ],
     allow_credentials=True,
     allow_methods=["*"],
