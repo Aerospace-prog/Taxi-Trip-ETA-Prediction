@@ -14,7 +14,7 @@ export default function AppLayout() {
         <Navbar onMenuToggle={() => setIsMobileMenuOpen(!isMobileMenuOpen)} />
 
         {/* Sidebar Container */}
-        <div className="md:h-screen md:p-6 shrink-0 flex items-center z-20">
+        <div className="md:h-screen md:p-6 shrink-0 flex items-center z-50 relative">
           <Sidebar
             isOpen={isMobileMenuOpen}
             onClose={() => setIsMobileMenuOpen(false)}
