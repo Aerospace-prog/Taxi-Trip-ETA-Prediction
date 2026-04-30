@@ -11,7 +11,6 @@ const POLL_INTERVAL = 30000;
 export default function DashboardPage() {
   const [metrics, setMetrics] = useState(null);
   const [recentPredictions, setRecentPredictions] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [healthStatus, setHealthStatus] = useState(null);
   const navigate = useNavigate();
   const pollRef = useRef(null);

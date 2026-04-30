@@ -7,7 +7,6 @@ const POLL_INTERVAL = 30000;
 
 export default function AdminDashboardPage() {
   const [metrics, setMetrics] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [recentInferences, setRecentInferences] = useState([]);
   const [healthStatus, setHealthStatus] = useState(null);
   const pollRef = useRef(null);

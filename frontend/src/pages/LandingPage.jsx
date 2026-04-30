@@ -180,22 +180,34 @@ export default function LandingPage() {
 
       {/* Footer Banner */}
       <section className="relative z-10 px-6 pb-24 max-w-7xl mx-auto">
-         <div className="rounded-[40px] overflow-hidden bg-gradient-to-r from-primary-500 to-accent-600 p-12 md:p-20 text-center relative shadow-glow-primary">
-            <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10 mix-blend-overlay" />
+         <div className="rounded-[40px] overflow-hidden bg-slate-900 border border-slate-800 p-12 md:p-20 text-center relative shadow-2xl group">
+            {/* Background Glows */}
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full max-w-2xl bg-gradient-to-b from-primary-500/20 to-transparent blur-[100px] opacity-50 group-hover:opacity-70 transition-opacity duration-700" />
+            <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-10 pointer-events-none" />
             
             <div className="relative z-10">
-               <h2 className="text-4xl md:text-5xl font-black text-white tracking-tighter mb-6 drop-shadow-md">Ready to accelerate?</h2>
-               <p className="text-primary-100 font-medium max-w-lg mx-auto mb-10 text-lg">Join the next generation of fleet dispatching. Register your node or log in to the admin terminal today.</p>
+               <h2 className="text-4xl md:text-5xl font-black text-white tracking-tighter mb-6 drop-shadow-md">
+                 Ready to <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary-400 to-accent-400">accelerate?</span>
+               </h2>
+               <p className="text-slate-400 font-medium max-w-lg mx-auto mb-10 text-lg">
+                 Join the next generation of fleet dispatching. Register your node or log in to the admin terminal today.
+               </p>
                
                <div className="flex flex-col sm:flex-row justify-center items-center gap-4">
-                  <Link to="/signup" className="btn-primary !bg-white !text-primary-700 !shadow-none hover:shadow-xl hover:scale-105 active:scale-95 !px-8 !py-4 text-base transition-all duration-300">
-                    Create Dispatcher Node
+                  <Link to="/signup" className="btn-primary !px-8 !py-4 text-base shadow-glow-primary hover:scale-105 active:scale-95 transition-all duration-300 relative group/btn">
+                    <span className="flex items-center justify-center">
+                       Create Dispatcher Node <ArrowRight size={18} className="ml-2 group-hover/btn:translate-x-1 transition-transform" />
+                    </span>
                   </Link>
                </div>
                
-               <p className="mt-8 text-xs font-bold uppercase tracking-widest text-primary-200">
-                  Powered by FastAPI & React
-               </p>
+               <div className="mt-12 flex items-center justify-center gap-4">
+                 <div className="h-[1px] w-12 bg-slate-800"></div>
+                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                    Powered by FastAPI & React
+                 </p>
+                 <div className="h-[1px] w-12 bg-slate-800"></div>
+               </div>
             </div>
          </div>
       </section>
