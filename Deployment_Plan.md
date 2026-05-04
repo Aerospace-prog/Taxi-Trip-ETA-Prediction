@@ -1,4 +1,4 @@
-#  **PRODUCTION DEPLOYMENT PLAN**
+# **PRODUCTION DEPLOYMENT PLAN**
 
 ### **Taxi Trip Duration Prediction – Public Production Deployment**
 
@@ -30,11 +30,11 @@ Docker Containers on EC2
 
 ### **Step 1: Create AWS EC2 Instance**
 
-**Recommended:**
+**Recommended (Free Tier):**
 
-- **Instance Type:** t3.medium (or t3.small minimum)
-- **OS:** Ubuntu 22.04 LTS
-- **Storage:** 30–40 GB (gp3)
+- **Instance Type:** t3.micro (Free Tier Eligible)
+- **OS:** Ubuntu 24.04 LTS
+- **Storage:** 30 GB (Maximum Free Tier limit)
 - **Security Group:**
   - Port 22 (SSH)
   - Port 80 (HTTP)
