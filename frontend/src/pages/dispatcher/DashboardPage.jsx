@@ -195,7 +195,7 @@ export default function DashboardPage() {
               <div>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">API Server</p>
                 <div className="px-4 py-3 bg-white/60 rounded-2xl border border-white shadow-sm">
-                  <span className="mono text-xs font-bold text-slate-500 block truncate">http://localhost:8000</span>
+                  <span className="mono text-xs font-bold text-slate-500 block truncate">{import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'}</span>
                 </div>
               </div>
             </div>
@@ -203,7 +203,7 @@ export default function DashboardPage() {
           
           <button
             className="w-full mt-6 flex items-center justify-center gap-2 py-3 px-4 rounded-2xl bg-slate-800 text-white hover:bg-slate-700 hover:shadow-lg transition-all active:scale-95 text-xs font-bold cursor-pointer relative z-10"
-            onClick={() => window.open('http://localhost:8000/docs', '_blank')}
+            onClick={() => window.open(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'}/docs`, '_blank')}
           >
             <ExternalLink size={14} /> View Swagger Specs
           </button>
