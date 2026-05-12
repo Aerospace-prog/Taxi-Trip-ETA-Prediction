@@ -14,6 +14,8 @@ class PredictRequest(BaseModel):
 class PredictResponse(BaseModel):
     predicted_duration_seconds: int
     predicted_duration_minutes: float
+    predicted_fare_amount: Optional[float] = None
+    currency: Optional[str] = "USD"
     model_version: str
     confidence: str
     request_id: str
@@ -28,6 +30,8 @@ class HistoryRecord(BaseModel):
     pickup_datetime: datetime
     predicted_duration_seconds: int
     predicted_duration_minutes: float
+    predicted_fare_amount: Optional[float] = None
+    currency: Optional[str] = "USD"
     model_version: str
     system_latency_ms: Optional[int] = None
     created_at: datetime

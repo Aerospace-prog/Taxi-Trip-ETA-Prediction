@@ -3,6 +3,7 @@ import { Upload, CheckCircle2, Circle, Loader, AlertCircle, ArrowDownUp, Zap, XC
 import api from '../../services/api';
 
 export default function RetrainModelPage() {
+  const [activeCity, setActiveCity] = useState('NYC');
   const [file, setFile] = useState(null);
   const [jobId, setJobId] = useState(null);
   const [candidateVersion, setCandidateVersion] = useState(null);
@@ -13,12 +14,18 @@ export default function RetrainModelPage() {
   const [promoteStatus, setPromoteStatus] = useState(''); // '', 'promoting', 'success', 'error'
   const [promoteError, setPromoteError] = useState('');
 
+  const CITIES = {
+    NYC: { name: "New York City" },
+    BLR: { name: "Bengaluru" }
+  };
+
   // Fetch current active model metrics
   useEffect(() => {
-    api.get('/metrics')
+    setActiveMetrics(null);
+    api.get(`/metrics?city_code=${activeCity}`)
       .then((res) => setActiveMetrics(res.data))
       .catch(() => {});
-  }, []);
+  }, [activeCity]);
 
   // Poll training job status when running
   useEffect(() => {
@@ -26,7 +33,7 @@ export default function RetrainModelPage() {
 
     const interval = setInterval(async () => {
       try {
-        const metricsRes = await api.get('/metrics');
+        const metricsRes = await api.get(`/metrics?city_code=${activeCity}`);
         setActiveMetrics(metricsRes.data);
 
         setProgress((prev) => {
@@ -41,7 +48,7 @@ export default function RetrainModelPage() {
     const timeout = setTimeout(() => {
       setProgress(100);
       setTrainingStatus('finished');
-      api.get('/metrics').then((res) => setActiveMetrics(res.data)).catch(() => {});
+      api.get(`/metrics?city_code=${activeCity}`).then((res) => setActiveMetrics(res.data)).catch(() => {});
     }, 60000); // Allow up to 60s for training
 
     return () => {
@@ -86,7 +93,8 @@ export default function RetrainModelPage() {
       const formData = new FormData();
       formData.append('file', file);
 
-      const res = await api.post('/retrain', formData, {
+      // Append city_code so backend knows which city to train
+      const res = await api.post(`/retrain?city_code=${activeCity}`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
         timeout: 120000,
       });
@@ -110,9 +118,9 @@ export default function RetrainModelPage() {
     setPromoteError('');
 
     try {
-      await api.post('/promote-model', { candidate_version: version });
+      await api.post('/promote-model', { candidate_version: version, city_code: activeCity });
       setPromoteStatus('success');
-      const res = await api.get('/metrics');
+      const res = await api.get(`/metrics?city_code=${activeCity}`);
       setActiveMetrics(res.data);
     } catch (err) {
       const detail = err.response?.data?.detail;
@@ -140,6 +148,33 @@ export default function RetrainModelPage() {
           </div>
           <h1 className="text-4xl md:text-5xl font-extrabold text-slate-800 m-0 tracking-tighter">Engine Retraining</h1>
         </div>
+        
+        <div className="flex bg-white/60 backdrop-blur-md rounded-2xl border border-white/80 shadow-sm p-1 mx-auto md:mx-0">
+          {Object.keys(CITIES).map((city) => (
+            <button
+              key={city}
+              type="button"
+              onClick={() => {
+                if (trainingStatus === 'running' || trainingStatus === 'uploading') return;
+                setActiveCity(city);
+                setFile(null);
+                setTrainingStatus('idle');
+                setProgress(0);
+                setUploadError('');
+                setJobId(null);
+                setCandidateVersion(null);
+                setPromoteStatus('');
+                setPromoteError('');
+              }}
+              className={`px-4 py-2 rounded-xl text-sm font-bold transition-all duration-300 ${
+                activeCity === city ? 'bg-primary-500 text-white shadow-md' : 'text-slate-500 hover:bg-white'
+              } ${(trainingStatus === 'running' || trainingStatus === 'uploading') ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              {CITIES[city].name}
+            </button>
+          ))}
+        </div>
+
         <div className="text-left md:text-right">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1">Active Model Node</p>
           <span className="badge bg-white text-slate-700 shadow-sm border px-3 py-1 font-bold mono">

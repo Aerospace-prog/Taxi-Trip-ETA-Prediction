@@ -31,3 +31,7 @@ model_data/
 
 # Logs
 *.log
+
+# Data files
+backend/data/*.csv
+backend/data/*.parquet

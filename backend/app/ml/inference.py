@@ -24,31 +24,40 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 # Global model reference – loaded once, used for every request
-_pipeline_bundle = None
-_model_version = "stub_v0.1"
+# Dictionary mapping city_code -> pipeline bundle
+_active_models = {}
 
 
 def load_model() -> bool:
     """
-    Load the serialized pipeline bundle from disk.
-    Returns True if real model loaded, False if using stub.
+    Load the serialized pipeline bundles from disk for all configured cities.
+    Returns True if at least one real model loaded.
     """
-    global _pipeline_bundle, _model_version
+    global _active_models
+    _active_models = {}
+    models_dir = "/app/models"
+    loaded_any = False
 
-    model_path = settings.MODEL_PATH
-    if os.path.exists(model_path):
-        try:
-            _pipeline_bundle = joblib.load(model_path)
-            _model_version = _pipeline_bundle.get("version", "xgb_v1.0")
-            logger.info(f"Model loaded: {_model_version} from {model_path}")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to load model: {e}")
+    for city_code in settings.CITIES.keys():
+        model_path = os.path.join(models_dir, f"active_model_{city_code}.pkl")
+        if not os.path.exists(model_path) and city_code == "NYC":
+            # Fallback to old name for NYC
+            model_path = os.path.join(models_dir, "active_model.pkl")
 
-    logger.warning("No trained model found. Using stub predictions.")
-    _pipeline_bundle = None
-    _model_version = "stub_v0.1"
-    return False
+        if os.path.exists(model_path):
+            try:
+                bundle = joblib.load(model_path)
+                _active_models[city_code] = bundle
+                version = bundle.get("version", "xgb_v1.0")
+                logger.info(f"Model loaded for {city_code}: {version} from {model_path}")
+                loaded_any = True
+            except Exception as e:
+                logger.error(f"Failed to load model for {city_code}: {e}")
+
+    if not loaded_any:
+        logger.warning("No trained models found. Using stub predictions.")
+
+    return loaded_any
 
 
 def reload_model() -> bool:
@@ -56,30 +65,43 @@ def reload_model() -> bool:
     return load_model()
 
 
+def _get_city_for_coords(lat: float, lng: float) -> str:
+    """Identify which city configuration to use based on coordinates."""
+    for city_code, config in settings.CITIES.items():
+        b = config["bounds"]
+        if b["lat_min"] <= lat <= b["lat_max"] and b["lng_min"] <= lng <= b["lng_max"]:
+            return city_code
+    return settings.DEFAULT_CITY
+
 def predict(
     pickup_lat: float,
     pickup_lng: float,
     dropoff_lat: float,
     dropoff_lng: float,
     pickup_datetime_str: str,
-) -> tuple[int, str, str]:
+) -> tuple[int, float, str, str, str]:
     """
     Run inference on a single trip.
 
     Returns:
-        (predicted_seconds, model_version, confidence)
+        (predicted_seconds, predicted_fare, model_version, confidence, city_code)
     """
-    if _pipeline_bundle is not None:
+    city_code = _get_city_for_coords(pickup_lat, pickup_lng)
+    city_config = settings.CITIES.get(city_code)
+    
+    if city_code in _active_models:
         try:
-            return _predict_with_model(
-                pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, pickup_datetime_str
+            bundle = _active_models[city_code]
+            seconds, fare, version, confidence = _predict_with_model(
+                pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, pickup_datetime_str, city_config, bundle
             )
+            return seconds, fare, version, confidence, city_code
         except Exception as e:
-            logger.error(f"Model prediction failed: {e}. Falling back to stub.")
+            logger.error(f"Model prediction failed for {city_code}: {e}. Falling back to stub.")
 
     # Stub fallback: haversine-based estimate
-    seconds = _stub_predict(pickup_lat, pickup_lng, dropoff_lat, dropoff_lng)
-    return seconds, _model_version, "Low (stub)"
+    seconds, fare = _stub_predict(pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, city_config)
+    return seconds, fare, "stub_v0.1", "Low (stub)", city_code
 
 
 def _predict_with_model(
@@ -88,11 +110,15 @@ def _predict_with_model(
     dropoff_lat: float,
     dropoff_lng: float,
     pickup_datetime_str: str,
-) -> tuple[int, str, str]:
+    city_config: dict,
+    bundle: dict
+) -> tuple[int, float, str, str]:
     """Run prediction using the loaded XGBoost pipeline."""
-    model = _pipeline_bundle["model"]
-    cluster_encoder = _pipeline_bundle["cluster_encoder"]
-    feature_columns = _pipeline_bundle["feature_columns"]
+    model_duration = bundle.get("model_duration", bundle.get("model"))
+    model_fare = bundle.get("model_fare")
+    cluster_encoder = bundle["cluster_encoder"]
+    feature_columns = bundle["feature_columns"]
+    version = bundle.get("version", "unknown")
 
     # Build input dataframe
     input_df = pd.DataFrame([{
@@ -114,12 +140,23 @@ def _predict_with_model(
     # Select features in the correct order
     X = input_df[feature_columns]
 
-    # Predict
-    predicted = model.predict(X)
-    seconds = max(int(predicted[0]), 60)
+    # Predict Duration (Base NYC pattern)
+    predicted_dur = model_duration.predict(X)
+    raw_seconds = max(int(predicted_dur[0]), 60)
+    
+    # Adjust for local city traffic
+    seconds = int(raw_seconds * city_config.get("traffic_multiplier", 1.0))
+
+    # Predict/Calculate Fare
+    # We use local city pricing tokens instead of purely relying on NYC model output
+    distance_km = haversine_distance(pickup_lat, pickup_lng, dropoff_lat, dropoff_lng)
+    pricing = city_config["pricing"]
+    
+    # Calculate fare: Base + (Dist * Rate) + (Time * Rate)
+    fare = pricing["base_fare"] + (distance_km * pricing["per_km"]) + ((seconds / 60) * pricing["per_min"])
 
     # Confidence based on how typical the trip is
-    distance = haversine_distance(pickup_lat, pickup_lng, dropoff_lat, dropoff_lng)
+    distance = distance_km
     if distance < 30 and seconds < 5400:
         confidence = "High"
     elif distance < 50:
@@ -127,7 +164,7 @@ def _predict_with_model(
     else:
         confidence = "Low"
 
-    return seconds, _model_version, confidence
+    return seconds, fare, version, confidence
 
 
 def _stub_predict(
@@ -135,15 +172,27 @@ def _stub_predict(
     pickup_lng: float,
     dropoff_lat: float,
     dropoff_lng: float,
-) -> int:
+    city_config: dict
+) -> tuple[int, float]:
     """Haversine-based stub prediction (before model is trained)."""
     distance_km = haversine_distance(pickup_lat, pickup_lng, dropoff_lat, dropoff_lng)
-    estimated_seconds = int((distance_km / 25) * 3600)  # ~25 km/h avg speed
-    return max(estimated_seconds, 120)
+    
+    # Base estimated speed ~25 km/h, adjusted by city multiplier
+    avg_speed = 25 / city_config.get("traffic_multiplier", 1.0)
+    estimated_seconds = int((distance_km / avg_speed) * 3600)
+    seconds = max(estimated_seconds, 120)
+    
+    pricing = city_config["pricing"]
+    fare = pricing["base_fare"] + (distance_km * pricing["per_km"]) + ((seconds / 60) * pricing["per_min"])
+    
+    return seconds, fare
 
 
-def get_model_version() -> str:
-    return _model_version
+def get_model_version(city_code: str = "NYC") -> str:
+    """Get the version string of the active model for a given city."""
+    if city_code in _active_models:
+        return _active_models[city_code].get("version", "unknown")
+    return "stub_v0.1"
 
 
 # Load model on module import

@@ -10,6 +10,7 @@ class RetrainResponse(BaseModel):
 
 class PromoteRequest(BaseModel):
     candidate_version: str
+    city_code: str = "NYC"
 
 
 class PromoteResponse(BaseModel):

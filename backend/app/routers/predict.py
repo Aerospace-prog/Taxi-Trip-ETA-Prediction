@@ -24,13 +24,18 @@ def predict_trip_duration(
     start_time = time.time()
 
     # Run ML inference
-    predicted_seconds, model_version, confidence = ml_predict(
+    predicted_seconds, predicted_fare, model_version, confidence, city_code = ml_predict(
         pickup_lat=body.pickup_latitude,
         pickup_lng=body.pickup_longitude,
         dropoff_lat=body.dropoff_latitude,
         dropoff_lng=body.dropoff_longitude,
         pickup_datetime_str=body.pickup_datetime,
     )
+
+    from app.config import get_settings
+    settings = get_settings()
+    city_config = settings.CITIES.get(city_code, settings.CITIES[settings.DEFAULT_CITY])
+    currency_code = city_config["currency"]
 
     latency_ms = int((time.time() - start_time) * 1000)
     request_id = generate_request_id()
@@ -48,6 +53,8 @@ def predict_trip_duration(
         dropoff_lng=body.dropoff_longitude,
         pickup_dt=pickup_dt,
         predicted_seconds=predicted_seconds,
+        predicted_fare=predicted_fare,
+        currency=currency_code,
         model_version=model_version,
         latency_ms=latency_ms,
         user_id=current_user.id,
@@ -56,6 +63,8 @@ def predict_trip_duration(
     return PredictResponse(
         predicted_duration_seconds=predicted_seconds,
         predicted_duration_minutes=round(predicted_seconds / 60, 1),
+        predicted_fare_amount=round(predicted_fare, 2),
+        currency=currency_code,
         model_version=model_version,
         confidence=confidence,
         request_id=request_id,
@@ -88,6 +97,8 @@ def get_history(
                 pickup_datetime=r.pickup_datetime,
                 predicted_duration_seconds=r.predicted_duration_seconds,
                 predicted_duration_minutes=round(r.predicted_duration_seconds / 60, 1),
+                predicted_fare_amount=r.predicted_fare_amount,
+                currency=r.currency,
                 model_version=r.model_version,
                 system_latency_ms=r.system_latency_ms,
                 created_at=r.created_at,

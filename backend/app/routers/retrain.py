@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Training"])
 
 
-def _run_training(file_path: str, job_id: str, version: str):
+def _run_training(file_path: str, job_id: str, version: str, city_code: str):
     """Run training in a background thread."""
     db = SessionLocal()
     try:
@@ -40,14 +40,16 @@ def _run_training(file_path: str, job_id: str, version: str):
             output_dir="/app/models",
             version=version,
             sample_size=200000,
+            city_code=city_code,
         )
 
         # Save model metadata
         metadata = ModelMetadata(
             version=result["version"],
-            mae=result["mae"],
-            rmse=result["rmse"],
-            r2_score=result["r2_score"],
+            city_code=city_code,
+            mae=result["metrics"]["duration"]["mae"],
+            rmse=result["metrics"]["duration"]["rmse"],
+            r2_score=result["metrics"]["duration"]["r2"],
             status="candidate",
             artifact_path=result["artifact_path"],
         )
@@ -81,6 +83,7 @@ def _run_training(file_path: str, job_id: str, version: str):
 @router.post("/retrain", response_model=RetrainResponse)
 async def retrain_model_endpoint(
     file: UploadFile = File(...),
+    city_code: str = "NYC",
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role("admin")),
 ):
@@ -104,7 +107,7 @@ async def retrain_model_endpoint(
 
     # Validate CSV schema (skip for parquet)
     if file.filename.endswith(".csv"):
-        is_valid, message = validate_csv_schema(file_path)
+        is_valid, message = validate_csv_schema(file_path, city_code=city_code)
         if not is_valid:
             os.remove(file_path)
             raise HTTPException(
@@ -113,13 +116,13 @@ async def retrain_model_endpoint(
             )
 
     # Create training job
-    job = create_training_job(db, dataset_name=file.filename)
-    version = f"xgb_v{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+    job = create_training_job(db, dataset_name=file.filename, city_code=city_code)
+    version = f"xgb_{city_code}_v{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
 
     # Launch training in background thread
     thread = threading.Thread(
         target=_run_training,
-        args=(file_path, job.job_id, version),
+        args=(file_path, job.job_id, version, city_code),
         daemon=True,
     )
     thread.start()
@@ -141,7 +144,7 @@ def promote_candidate_model(
     Promote a candidate model to active.
     Archives the current active model. Admin role required.
     """
-    success = promote_model(db, body.candidate_version)
+    success = promote_model(db, body.candidate_version, body.city_code)
 
     if not success:
         raise HTTPException(

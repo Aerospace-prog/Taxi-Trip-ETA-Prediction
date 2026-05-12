@@ -23,21 +23,22 @@ from app.ml.feature_engineering import (
     LocationClusterEncoder,
     FEATURE_COLUMNS,
 )
+from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
 # Zone ID → approximate centroid mapping for NYC taxi zones
 # This maps PULocationID/DOLocationID to lat/lng when raw coords aren't available
-ZONE_CENTROIDS_URL = None  # We'll build this from the taxi_zone_lookup.csv
+ZONE_CENTROIDS_URL = None
 
 
-def load_and_clean_data(file_path: str, sample_size: Optional[int] = None) -> pd.DataFrame:
+def load_and_clean_data(file_path: str, sample_size: Optional[int] = None, city_code: str = "NYC") -> pd.DataFrame:
     """
     Load a dataset (CSV or Parquet) and clean it for training.
-    Handles both formats:
-      - Classic: has pickup_latitude/longitude columns
-      - Modern:  has PULocationID/DOLocationID (zone IDs)
     """
+    if city_code == "BLR":
+        return load_bengaluru_data(file_path, sample_size)
+
     if file_path.endswith(".parquet"):
         df = pd.read_parquet(file_path)
     else:
@@ -78,15 +79,24 @@ def load_and_clean_data(file_path: str, sample_size: Optional[int] = None) -> pd
     # Filter outliers
     df = df[df["trip_duration"] > 60]       # Minimum 1 minute
     df = df[df["trip_duration"] < 7200]     # Maximum 2 hours
-    df = df[df["pickup_latitude"].between(40.5, 41.0)]
-    df = df[df["pickup_longitude"].between(-74.3, -73.7)]
-    df = df[df["dropoff_latitude"].between(40.5, 41.0)]
-    df = df[df["dropoff_longitude"].between(-74.3, -73.7)]
+    # Get bounds from config
+    settings = get_settings()
+    if city_code in settings.CITIES:
+        bounds = settings.CITIES[city_code]["bounds"]
+        df = df[df["pickup_latitude"].between(bounds["lat_min"], bounds["lat_max"])]
+        df = df[df["pickup_longitude"].between(bounds["lng_min"], bounds["lng_max"])]
+        df = df[df["dropoff_latitude"].between(bounds["lat_min"], bounds["lat_max"])]
+        df = df[df["dropoff_longitude"].between(bounds["lng_min"], bounds["lng_max"])]
 
+    # Ensure fare_amount is present, or derive a rough estimate if missing
+    if "fare_amount" not in df.columns:
+        df["fare_amount"] = 3.0 + (df["trip_duration"] / 60) * 0.5 + df["trip_distance"] * 2.0
+        
     # Drop rows with missing critical values
     required = ["pickup_latitude", "pickup_longitude", "dropoff_latitude",
-                 "dropoff_longitude", "pickup_datetime", "trip_duration"]
+                 "dropoff_longitude", "pickup_datetime", "trip_duration", "fare_amount"]
     df = df.dropna(subset=required)
+    df = df[df["fare_amount"] > 0]
 
     if sample_size and len(df) > sample_size:
         df = df.sample(n=sample_size, random_state=42)
@@ -94,6 +104,67 @@ def load_and_clean_data(file_path: str, sample_size: Optional[int] = None) -> pd
 
     logger.info(f"Clean data: {len(df)} rows after filtering")
     return df.reset_index(drop=True)
+
+
+def load_bengaluru_data(file_path: str, sample_size: Optional[int] = None) -> pd.DataFrame:
+    """
+    Data Synthesis specifically for Bengaluru Rapido dataset.
+    Since we lack duration/fare, we synthesize them based on realistic heuristics.
+    """
+    logger.info("Running Bengaluru Data Synthesis preprocessor...")
+    
+    # We only need the Rapido dataset for this
+    # It contains: ts,number,pick_lat,pick_lng,drop_lat,drop_lng
+    df = pd.read_csv(file_path)
+    
+    df.rename(columns={
+        "ts": "pickup_datetime",
+        "pick_lat": "pickup_latitude",
+        "pick_lng": "pickup_longitude",
+        "drop_lat": "dropoff_latitude",
+        "drop_lng": "dropoff_longitude"
+    }, inplace=True)
+    
+    df["pickup_datetime"] = pd.to_datetime(df["pickup_datetime"], errors="coerce")
+    df.dropna(subset=["pickup_datetime", "pickup_latitude", "dropoff_latitude"], inplace=True)
+    
+    # Filter out impossible coordinates
+    settings = get_settings()
+    bounds = settings.CITIES["BLR"]["bounds"]
+    df = df[df["pickup_latitude"].between(bounds["lat_min"], bounds["lat_max"])]
+    df = df[df["pickup_longitude"].between(bounds["lng_min"], bounds["lng_max"])]
+    df = df[df["dropoff_latitude"].between(bounds["lat_min"], bounds["lat_max"])]
+    df = df[df["dropoff_longitude"].between(bounds["lng_min"], bounds["lng_max"])]
+    
+    if sample_size and len(df) > sample_size:
+        df = df.sample(n=sample_size, random_state=42)
+        
+    from app.ml.feature_engineering import haversine_distance
+    
+    # Calculate distance (haversine_distance accepts pandas Series natively because numpy funcs broadcast)
+    df["trip_distance"] = haversine_distance(
+        df["pickup_latitude"], df["pickup_longitude"],
+        df["dropoff_latitude"], df["dropoff_longitude"]
+    )
+    
+    # Filter out zero distance
+    df = df[df["trip_distance"] > 0.1]
+    
+    # Synthesize trip_duration:
+    base_duration = 180 + (df["trip_distance"] / 12.0) * 3600
+    noise_duration = np.random.normal(0, 0.3 * base_duration)
+    df["trip_duration"] = np.maximum(300, base_duration + noise_duration)
+    
+    # Synthesize fare_amount:
+    pricing = settings.CITIES["BLR"]["pricing"]
+    base_fare = pricing["base_fare"] + (df["trip_distance"] * pricing["per_km"]) + ((df["trip_duration"] / 60) * pricing["per_min"])
+
+    noise_fare = np.random.normal(0, 0.1 * base_fare)
+    df["fare_amount"] = np.maximum(pricing["base_fare"], base_fare + noise_fare)
+    
+    logger.info(f"Synthesized data for {len(df)} BLR trips.")
+    return df.reset_index(drop=True)
+
 
 
 def _convert_zones_to_coords(df: pd.DataFrame) -> pd.DataFrame:
@@ -154,6 +225,7 @@ def train_model(
     output_dir: str = "/app/models",
     version: str = "xgb_v1.0",
     sample_size: int = 200000,
+    city_code: str = "NYC",
 ) -> dict:
     """
     Full training pipeline: load → clean → features → train → evaluate → save.
@@ -165,22 +237,23 @@ def train_model(
 
     # Step 1: Load and clean
     logger.info("Step 1/6: Loading and cleaning data...")
-    df = load_and_clean_data(file_path, sample_size=sample_size)
+    df = load_and_clean_data(file_path, sample_size=sample_size, city_code=city_code)
 
     # Step 2: Feature engineering
     logger.info("Step 2/6: Feature engineering...")
     X, cluster_encoder = build_features(df, fit=True)
-    y = df["trip_duration"].values
+    y_duration = df["trip_duration"].values
+    y_fare = df["fare_amount"].values
 
     # Step 3: Train/test split (80/20)
     logger.info("Step 3/6: Train/test split...")
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42
+    X_train, X_test, y_duration_train, y_duration_test, y_fare_train, y_fare_test = train_test_split(
+        X, y_duration, y_fare, test_size=0.2, random_state=42
     )
 
-    # Step 4: Train XGBoost
-    logger.info("Step 4/6: Training XGBoost model...")
-    model = XGBRegressor(
+    # Step 4: Train XGBoost Models
+    logger.info("Step 4/6: Training XGBoost models (Duration and Fare)...")
+    model_params = dict(
         n_estimators=500,
         max_depth=7,
         learning_rate=0.05,
@@ -189,20 +262,37 @@ def train_model(
         random_state=42,
         n_jobs=-1,
     )
-    model.fit(
-        X_train, y_train,
-        eval_set=[(X_test, y_test)],
+    
+    model_duration = XGBRegressor(**model_params)
+    model_duration.fit(
+        X_train, y_duration_train,
+        eval_set=[(X_test, y_duration_test)],
+        verbose=50,
+    )
+    
+    model_fare = XGBRegressor(**model_params)
+    model_fare.fit(
+        X_train, y_fare_train,
+        eval_set=[(X_test, y_fare_test)],
         verbose=50,
     )
 
     # Step 5: Evaluate
-    logger.info("Step 5/6: Evaluating model...")
-    y_pred = model.predict(X_test)
-    mae = mean_absolute_error(y_test, y_pred)
-    rmse = np.sqrt(mean_squared_error(y_test, y_pred))
-    r2 = r2_score(y_test, y_pred)
+    logger.info("Step 5/6: Evaluating models...")
+    
+    # Evaluate Duration
+    y_pred_duration = model_duration.predict(X_test)
+    mae_dur = mean_absolute_error(y_duration_test, y_pred_duration)
+    rmse_dur = np.sqrt(mean_squared_error(y_duration_test, y_pred_duration))
+    r2_dur = r2_score(y_duration_test, y_pred_duration)
+    logger.info(f"Duration -> MAE: {mae_dur:.1f}s | RMSE: {rmse_dur:.1f}s | R²: {r2_dur:.4f}")
 
-    logger.info(f"MAE: {mae:.1f}s | RMSE: {rmse:.1f}s | R²: {r2:.4f}")
+    # Evaluate Fare
+    y_pred_fare = model_fare.predict(X_test)
+    mae_fare = mean_absolute_error(y_fare_test, y_pred_fare)
+    rmse_fare = np.sqrt(mean_squared_error(y_fare_test, y_pred_fare))
+    r2_fare = r2_score(y_fare_test, y_pred_fare)
+    logger.info(f"Fare -> MAE: ${mae_fare:.2f} | RMSE: ${rmse_fare:.2f} | R²: {r2_fare:.4f}")
 
     # Step 6: Save full pipeline
     logger.info("Step 6/6: Saving model pipeline...")
@@ -210,16 +300,20 @@ def train_model(
     artifact_path = os.path.join(output_dir, f"{version}.pkl")
 
     pipeline_bundle = {
-        "model": model,
+        "model": model_duration,
+        "model_duration": model_duration,
+        "model_fare": model_fare,
         "cluster_encoder": cluster_encoder,
         "feature_columns": list(X_train.columns),
         "version": version,
-        "metrics": {"mae": mae, "rmse": rmse, "r2_score": r2},
+        "metrics": {
+            "duration": {"mae": mae_dur, "rmse": rmse_dur, "r2_score": r2_dur},
+            "fare": {"mae": mae_fare, "rmse": rmse_fare, "r2_score": r2_fare}
+        },
     }
     joblib.dump(pipeline_bundle, artifact_path)
 
-    # Also save as active_model.pkl
-    active_path = os.path.join(output_dir, "active_model.pkl")
+    active_path = os.path.join(output_dir, f"active_model_{city_code}.pkl")
     joblib.dump(pipeline_bundle, active_path)
 
     training_time = time.time() - start_time
@@ -227,9 +321,10 @@ def train_model(
 
     return {
         "version": version,
-        "mae": round(mae, 2),
-        "rmse": round(rmse, 2),
-        "r2_score": round(r2, 4),
+        "metrics": {
+            "duration": {"mae": round(mae_dur, 2), "rmse": round(rmse_dur, 2), "r2": round(r2_dur, 4)},
+            "fare": {"mae": round(mae_fare, 2), "rmse": round(rmse_fare, 2), "r2": round(r2_fare, 4)}
+        },
         "artifact_path": artifact_path,
         "training_time_seconds": round(training_time, 1),
         "training_samples": len(X_train),

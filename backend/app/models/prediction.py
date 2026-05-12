@@ -21,6 +21,8 @@ class TripPrediction(Base):
     dropoff_longitude: Mapped[float] = mapped_column(Float, nullable=False)
     pickup_datetime: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     predicted_duration_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
+    predicted_fare_amount: Mapped[float] = mapped_column(Float, nullable=True)
+    currency: Mapped[str] = mapped_column(String(10), nullable=True, default="USD")
     model_version: Mapped[str] = mapped_column(
         String(50),
         ForeignKey("model_metadata.version"),

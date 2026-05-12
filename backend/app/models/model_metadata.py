@@ -15,6 +15,7 @@ class ModelMetadata(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     version: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
+    city_code: Mapped[str] = mapped_column(String(10), nullable=False, default="NYC")
     mae: Mapped[float] = mapped_column(Float, nullable=True)
     rmse: Mapped[float] = mapped_column(Float, nullable=True)
     r2_score: Mapped[float] = mapped_column(Float, nullable=True)

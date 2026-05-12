@@ -12,13 +12,14 @@ router = APIRouter(tags=["Metrics"])
 
 @router.get("/metrics", response_model=MetricsResponse)
 def get_model_metrics(
+    city_code: str = "NYC",
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Get performance metrics of the currently active model."""
     active_model = (
         db.query(ModelMetadata)
-        .filter(ModelMetadata.status == "active")
+        .filter(ModelMetadata.status == "active", ModelMetadata.city_code == city_code)
         .order_by(ModelMetadata.created_at.desc())
         .first()
     )

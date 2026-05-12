@@ -1,25 +1,37 @@
-import { useState } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
-import { MapPin, Clock, Info, ArrowRight, Trash2, Cpu, AlertTriangle, Disc, Target } from 'lucide-react';
+import { useState, useCallback } from 'react';
+import { Clock, ArrowRight, Trash2, Cpu, AlertTriangle, Disc, Target, Navigation, Loader2 } from 'lucide-react';
 import api from '../../services/api';
 
-// NYC bounding box
-const NYC_BOUNDS = {
-  lat: { min: 40.4774, max: 40.9176 },
-  lng: { min: -74.2591, max: -73.7004 },
+import MapSelector from '../../components/MapSelector';
+import AddressSearch from '../../components/AddressSearch';
+
+// City Configurations
+const CITIES = {
+  NYC: {
+    name: "New York City",
+    currency: "USD",
+    symbol: "$",
+    bounds: { lat_min: 40.5, lat_max: 41.0, lng_min: -74.3, lng_max: -73.7 }
+  },
+  BLR: {
+    name: "Bengaluru",
+    currency: "INR",
+    symbol: "₹",
+    bounds: { lat_min: 12.7, lat_max: 13.2, lng_min: 77.4, lng_max: 77.8 }
+  }
 };
 
-function isValidNYCCoord(lat, lng) {
+function isValidCoord(lat, lng, bounds) {
   return (
-    lat >= NYC_BOUNDS.lat.min && lat <= NYC_BOUNDS.lat.max &&
-    lng >= NYC_BOUNDS.lng.min && lng <= NYC_BOUNDS.lng.max
+    lat >= bounds.lat_min && lat <= bounds.lat_max &&
+    lng >= bounds.lng_min && lng <= bounds.lng_max
   );
 }
 
 export default function NewPredictionPage() {
-  const navigate = useNavigate();
-  const location = useLocation();
-  const isAdmin = location.pathname.startsWith('/admin');
+
+  const [activeCity, setActiveCity] = useState('NYC');
+  const cityConfig = CITIES[activeCity];
 
   const [form, setForm] = useState({
     pickup_latitude: '',
@@ -31,6 +43,21 @@ export default function NewPredictionPage() {
   });
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
+  const [predictionResult, setPredictionResult] = useState(null);
+  const [isFetchingLocation, setIsFetchingLocation] = useState(false);
+  const [locationError, setLocationError] = useState('');
+  const [originAddressText, setOriginAddressText] = useState('');
+
+  const handleCoordinatesChange = useCallback((pickup, dropoff) => {
+    setForm(prev => ({
+      ...prev,
+      pickup_latitude: pickup ? pickup.lat.toFixed(6) : '',
+      pickup_longitude: pickup ? pickup.lng.toFixed(6) : '',
+      dropoff_latitude: dropoff ? dropoff.lat.toFixed(6) : '',
+      dropoff_longitude: dropoff ? dropoff.lng.toFixed(6) : '',
+    }));
+    setPredictionResult(null); // Clear previous result on change
+  }, []);
 
   const update = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -55,10 +82,10 @@ export default function NewPredictionPage() {
     if (!form.pickup_date) e.pickup_date = 'Required';
     if (!form.pickup_time) e.pickup_time = 'Required';
 
-    if (!e.pickup_latitude && !e.pickup_longitude && !isValidNYCCoord(lat, lng)) {
+    if (!e.pickup_latitude && !e.pickup_longitude && !isValidCoord(lat, lng, cityConfig.bounds)) {
         e.pickup_latitude = `Out of Range`;
     }
-    if (!e.dropoff_latitude && !e.dropoff_longitude && !isValidNYCCoord(dLat, dLng)) {
+    if (!e.dropoff_latitude && !e.dropoff_longitude && !isValidCoord(dLat, dLng, cityConfig.bounds)) {
         e.dropoff_latitude = `Out of Range`;
     }
 
@@ -81,8 +108,10 @@ export default function NewPredictionPage() {
     try {
       const payload = buildPayload();
       const res = await api.post('/predict', payload);
-      const resultPath = isAdmin ? '/admin/result' : '/result';
-      navigate(resultPath, { state: { prediction: res.data, payload } });
+      setPredictionResult(res.data);
+      // Optional: still navigate to result page, or keep it inline
+      // const resultPath = isAdmin ? '/admin/result' : '/result';
+      // navigate(resultPath, { state: { prediction: res.data, payload } });
     } catch (err) {
       const detail = err.response?.data?.detail;
       const errorMsg = Array.isArray(detail) ? detail[0]?.msg : detail;
@@ -95,6 +124,64 @@ export default function NewPredictionPage() {
   const clearForm = () => {
     setForm({ pickup_latitude: '', pickup_longitude: '', dropoff_latitude: '', dropoff_longitude: '', pickup_date: '', pickup_time: '' });
     setErrors({});
+    setPredictionResult(null);
+    setOriginAddressText('');
+    setLocationError('');
+  };
+
+  const handleFetchCurrentLocation = () => {
+    setLocationError('');
+    if (!navigator.geolocation) {
+      setLocationError('Geolocation is not supported by your browser.');
+      return;
+    }
+
+    setIsFetchingLocation(true);
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+        
+        // Validate against city bounds
+        if (!isValidCoord(latitude, longitude, cityConfig.bounds)) {
+          setIsFetchingLocation(false);
+          setLocationError(`Current location is outside the active city bounds (${cityConfig.name}).`);
+          return;
+        }
+
+        try {
+          const response = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`
+          );
+          const data = await response.json();
+          const address = data.display_name || 'Current Location';
+          
+          setForm(prev => ({
+            ...prev,
+            pickup_latitude: latitude.toFixed(6),
+            pickup_longitude: longitude.toFixed(6),
+          }));
+          setOriginAddressText(address);
+          setPredictionResult(null);
+        } catch (err) {
+          console.error("Reverse geocoding failed", err);
+          setLocationError('Failed to fetch address for current location.');
+          setForm(prev => ({
+            ...prev,
+            pickup_latitude: latitude.toFixed(6),
+            pickup_longitude: longitude.toFixed(6),
+          }));
+          setOriginAddressText('Current Location');
+        } finally {
+          setIsFetchingLocation(false);
+        }
+      },
+      (error) => {
+        console.error("Geolocation error", error);
+        setLocationError('Failed to access location. Please check browser permissions.');
+        setIsFetchingLocation(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
   };
 
   const payload = form.pickup_latitude ? buildPayload() : null;
@@ -110,7 +197,26 @@ export default function NewPredictionPage() {
              </div>
              <p className="text-[11px] font-bold tracking-widest uppercase text-slate-400 m-0">Inference Request</p>
           </div>
-          <h1 className="text-4xl md:text-5xl font-extrabold text-slate-800 m-0 tracking-tighter">New ETA Prediction</h1>
+          <h1 className="text-4xl md:text-5xl font-extrabold text-slate-800 m-0 tracking-tighter">AI ETA & Fare</h1>
+        </div>
+        
+        {/* City Selector */}
+        <div className="flex bg-white/60 backdrop-blur-md rounded-2xl border border-white/80 shadow-sm p-1">
+          {Object.keys(CITIES).map((city) => (
+            <button
+              key={city}
+              type="button"
+              onClick={() => {
+                setActiveCity(city);
+                clearForm();
+              }}
+              className={`px-4 py-2 rounded-xl text-sm font-bold transition-all duration-300 ${
+                activeCity === city ? 'bg-primary-500 text-white shadow-md' : 'text-slate-500 hover:bg-white'
+              }`}
+            >
+              {CITIES[city].name}
+            </button>
+          ))}
         </div>
       </header>
 
@@ -128,72 +234,86 @@ export default function NewPredictionPage() {
           <div className="bg-amber-100/50 backdrop-blur-sm border border-amber-200/50 rounded-2xl p-4 flex gap-3 items-start mb-8 shadow-sm">
             <AlertTriangle size={20} className="text-amber-500 shrink-0 mt-0.5" />
             <p className="text-xs text-amber-700 m-0 leading-relaxed font-medium">
-              Geofence Active: Coordinates must fall within New York City limits (Lat: {NYC_BOUNDS.lat.min} to {NYC_BOUNDS.lat.max}, Lng: {NYC_BOUNDS.lng.min} to {NYC_BOUNDS.lng.max}).
+              Geofence Active: Coordinates must fall within {cityConfig.name} limits.
             </p>
           </div>
 
-          {/* Graphical Route Setup */}
-          <div className="relative mb-10 pb-10 border-b border-white/50">
-            {/* The SVG dashed line connecting pickup to dropoff */}
-            <div className="absolute left-8 top-12 bottom-6 w-0.5 z-0" style={{ backgroundImage: 'linear-gradient(#cbd5e1 40%, rgba(255,255,255,0) 0%)', backgroundPosition: 'right', backgroundSize: '2px 8px', backgroundRepeat: 'repeat-y' }} />
+          {/* Graphical Map Setup */}
+          <div className="mb-10 relative">
+            <MapSelector 
+              bounds={cityConfig.bounds}
+              onCoordinatesChange={handleCoordinatesChange}
+              pickup={form.pickup_latitude ? {lat: parseFloat(form.pickup_latitude), lng: parseFloat(form.pickup_longitude)} : null}
+              dropoff={form.dropoff_latitude ? {lat: parseFloat(form.dropoff_latitude), lng: parseFloat(form.dropoff_longitude)} : null}
+            />
+          </div>
 
-            <div className="space-y-10 relative z-10 w-full">
-               
-               {/* PICKUP */}
-               <div className="flex flex-col lg:flex-row gap-6 w-full">
-                 <div className="w-16 flex justify-center shrink-0">
-                   <div className="w-12 h-12 rounded-full bg-white shadow-sm border border-white/80 flex items-center justify-center relative">
-                     <span className="w-3 h-3 rounded-full bg-primary-500 absolute" />
-                     <span className="w-3 h-3 rounded-full bg-primary-500 animate-ping absolute opacity-75" />
-                   </div>
-                 </div>
-                 
-                 <div className="flex-1 bg-white/40 backdrop-blur-md rounded-3xl border border-white/60 p-6 shadow-sm hover:bg-white/60 transition-colors">
-                   <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
-                     <Disc size={16} className="text-primary-500" /> Origin Point
-                   </h3>
-                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                     <div>
-                       <label className="label">Latitude</label>
-                       <input id="pickup-lat" className={`glass-input ${errors.pickup_latitude ? 'error' : ''}`} placeholder="40.7128" value={form.pickup_latitude} onChange={(e) => update('pickup_latitude', e.target.value)} />
-                       {errors.pickup_latitude && <p className="text-[10px] font-bold text-red-500 mt-2 uppercase tracking-wide">{errors.pickup_latitude}</p>}
-                     </div>
-                     <div>
-                       <label className="label">Longitude</label>
-                       <input id="pickup-lng" className={`glass-input ${errors.pickup_longitude ? 'error' : ''}`} placeholder="-74.0060" value={form.pickup_longitude} onChange={(e) => update('pickup_longitude', e.target.value)} />
-                       {errors.pickup_longitude && <p className="text-[10px] font-bold text-red-500 mt-2 uppercase tracking-wide">{errors.pickup_longitude}</p>}
-                     </div>
-                   </div>
-                 </div>
-               </div>
+          {/* Origin Point */}
+          <div className="mb-10">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2 m-0">
+                <Disc size={16} className="text-primary-500" /> Origin Point
+              </h3>
+              <button 
+                type="button" 
+                onClick={handleFetchCurrentLocation}
+                disabled={isFetchingLocation}
+                className="flex items-center gap-1.5 text-xs font-bold text-primary-600 bg-primary-50 hover:bg-primary-100 px-3 py-1.5 rounded-lg transition-colors border border-primary-100 disabled:opacity-50"
+              >
+                {isFetchingLocation ? <Loader2 size={14} className="animate-spin" /> : <Navigation size={14} />}
+                {isFetchingLocation ? 'Locating...' : 'Use Current Location'}
+              </button>
+            </div>
+            
+            {locationError && (
+              <p className="text-xs text-red-500 font-semibold mb-3">{locationError}</p>
+            )}
 
-               {/* DROPOFF */}
-               <div className="flex flex-col lg:flex-row gap-6 w-full">
-                 <div className="w-16 flex justify-center shrink-0">
-                   <div className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center shadow-lg relative bottom-1">
-                     <MapPin size={20} className="text-white" />
-                   </div>
-                 </div>
-                 
-                 <div className="flex-1 bg-white/40 backdrop-blur-md rounded-3xl border border-white/60 p-6 shadow-sm hover:bg-white/60 transition-colors">
-                   <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
-                     <Target size={16} className="text-slate-500" /> Destination Point
-                   </h3>
-                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                     <div>
-                       <label className="label">Latitude</label>
-                       <input id="dropoff-lat" className={`glass-input ${errors.dropoff_latitude ? 'error' : ''}`} placeholder="40.7580" value={form.dropoff_latitude} onChange={(e) => update('dropoff_latitude', e.target.value)} />
-                       {errors.dropoff_latitude && <p className="text-[10px] font-bold text-red-500 mt-2 uppercase tracking-wide">{errors.dropoff_latitude}</p>}
-                     </div>
-                     <div>
-                       <label className="label">Longitude</label>
-                       <input id="dropoff-lng" className={`glass-input ${errors.dropoff_longitude ? 'error' : ''}`} placeholder="-73.9855" value={form.dropoff_longitude} onChange={(e) => update('dropoff_longitude', e.target.value)} />
-                       {errors.dropoff_longitude && <p className="text-[10px] font-bold text-red-500 mt-2 uppercase tracking-wide">{errors.dropoff_longitude}</p>}
-                     </div>
-                   </div>
-                 </div>
-               </div>
+            <AddressSearch 
+              placeholder="Search pickup location..." 
+              bounds={cityConfig.bounds} 
+              externalValue={originAddressText}
+              onSelect={(loc) => {
+                setOriginAddressText(loc.address);
+                handleCoordinatesChange(loc, form.dropoff_latitude ? {lat: parseFloat(form.dropoff_latitude), lng: parseFloat(form.dropoff_longitude)} : null);
+              }}
+            />
+            <div className="grid grid-cols-2 gap-4 mt-4">
+              <div>
+                <label className="label">Latitude</label>
+                <input id="pickup-lat" className={`glass-input ${errors.pickup_latitude ? 'error' : ''}`} placeholder="40.7128" value={form.pickup_latitude} onChange={(e) => update('pickup_latitude', e.target.value)} />
+                {errors.pickup_latitude && <p className="text-[10px] font-bold text-red-500 mt-2 uppercase tracking-wide">{errors.pickup_latitude}</p>}
+              </div>
+              <div>
+                <label className="label">Longitude</label>
+                <input id="pickup-lng" className={`glass-input ${errors.pickup_longitude ? 'error' : ''}`} placeholder="-74.0060" value={form.pickup_longitude} onChange={(e) => update('pickup_longitude', e.target.value)} />
+                {errors.pickup_longitude && <p className="text-[10px] font-bold text-red-500 mt-2 uppercase tracking-wide">{errors.pickup_longitude}</p>}
+              </div>
+            </div>
+          </div>
 
+
+          {/* Destination Point */}
+          <div className="mb-10">
+            <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
+              <Target size={16} className="text-slate-500" /> Destination Point
+            </h3>
+            <AddressSearch 
+              placeholder="Search destination location..." 
+              bounds={cityConfig.bounds} 
+              onSelect={(loc) => handleCoordinatesChange(form.pickup_latitude ? {lat: parseFloat(form.pickup_latitude), lng: parseFloat(form.pickup_longitude)} : null, loc)}
+            />
+            <div className="grid grid-cols-2 gap-4 mt-4">
+              <div>
+                <label className="label">Latitude</label>
+                <input id="dropoff-lat" className={`glass-input ${errors.dropoff_latitude ? 'error' : ''}`} placeholder="40.7580" value={form.dropoff_latitude} onChange={(e) => update('dropoff_latitude', e.target.value)} />
+                {errors.dropoff_latitude && <p className="text-[10px] font-bold text-red-500 mt-2 uppercase tracking-wide">{errors.dropoff_latitude}</p>}
+              </div>
+              <div>
+                <label className="label">Longitude</label>
+                <input id="dropoff-lng" className={`glass-input ${errors.dropoff_longitude ? 'error' : ''}`} placeholder="-73.9855" value={form.dropoff_longitude} onChange={(e) => update('dropoff_longitude', e.target.value)} />
+                {errors.dropoff_longitude && <p className="text-[10px] font-bold text-red-500 mt-2 uppercase tracking-wide">{errors.dropoff_longitude}</p>}
+              </div>
             </div>
           </div>
 
@@ -232,6 +352,34 @@ export default function NewPredictionPage() {
           </div>
         </div>
       </form>
+
+      {/* Inline Prediction Results Overlay */}
+      {predictionResult && (
+        <div className="glass-panel p-8 mb-6 border-emerald-500/30 bg-emerald-50/40 animate-fade-in shadow-xl">
+          <div className="flex justify-between items-start mb-6">
+            <div>
+              <p className="text-[11px] font-bold tracking-widest uppercase text-emerald-600 mb-1">Inference Complete</p>
+              <h2 className="text-2xl font-extrabold text-slate-800">Dynamic Estimation</h2>
+            </div>
+            <div className="badge bg-emerald-500 text-white border-none shadow-md">
+              {predictionResult.confidence} Confidence
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+            <div className="bg-white/80 rounded-3xl p-6 shadow-sm border border-emerald-100 flex flex-col items-center justify-center">
+              <Clock size={32} className="text-emerald-500 mb-3" />
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Predicted ETA</p>
+              <p className="text-4xl font-black text-slate-800">{predictionResult.predicted_duration_minutes} <span className="text-xl text-slate-500">min</span></p>
+            </div>
+            <div className="bg-white/80 rounded-3xl p-6 shadow-sm border border-emerald-100 flex flex-col items-center justify-center">
+              <div className="w-8 h-8 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center font-bold mb-3">{cityConfig.symbol}</div>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Predicted Fare</p>
+              <p className="text-4xl font-black text-slate-800">{cityConfig.symbol}{predictionResult.predicted_fare_amount}</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Developer Context Footer */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

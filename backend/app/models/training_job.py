@@ -16,6 +16,7 @@ class TrainingJob(Base):
     )
     job_id: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
     dataset_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    city_code: Mapped[str] = mapped_column(String(10), nullable=False, default="NYC")
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="pending"
     )  # pending / running / completed / failed
