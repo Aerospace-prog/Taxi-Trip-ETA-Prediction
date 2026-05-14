@@ -12,7 +12,10 @@ frontend/dist/
 # Environment files (secrets)
 backend/.env
 backend/.env.production
+frontend/.env
+frontend/.env.local
 .env
+.env.local
 .env.production
 
 # IDE / Editor

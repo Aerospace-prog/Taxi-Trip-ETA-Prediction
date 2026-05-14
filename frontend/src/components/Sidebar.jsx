@@ -22,8 +22,8 @@ export default function Sidebar({ isOpen, onClose }) {
     return () => clearInterval(pollRef.current);
   }, []);
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     navigate('/login');
   };
 

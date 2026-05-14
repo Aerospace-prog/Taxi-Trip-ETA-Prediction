@@ -11,6 +11,10 @@ class RegisterRequest(BaseModel):
     password: str
 
 
+class SocialAuthRequest(BaseModel):
+    email: str
+
+
 class LoginResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"

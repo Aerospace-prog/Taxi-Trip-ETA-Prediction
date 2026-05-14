@@ -5,6 +5,8 @@ import AppLayout from './components/AppLayout';
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
+import SSOCallbackPage from './pages/SSOCallbackPage';
+import SSOBridgePage from './pages/SSOBridgePage';
 import DashboardPage from './pages/dispatcher/DashboardPage';
 import NewPredictionPage from './pages/dispatcher/NewPredictionPage';
 import PredictionResultPage from './pages/dispatcher/PredictionResultPage';
@@ -21,6 +23,8 @@ export default function App() {
           <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<SignupPage />} />
+          <Route path="/sso-callback" element={<SSOCallbackPage />} />
+          <Route path="/sso-bridge" element={<SSOBridgePage />} />
 
           {/* Dispatcher Routes */}
           <Route element={<RequireAuth><AppLayout /></RequireAuth>}>

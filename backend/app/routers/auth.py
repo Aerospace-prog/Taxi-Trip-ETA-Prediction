@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.user import User
-from app.schemas.auth import LoginResponse, RegisterRequest
+from app.schemas.auth import LoginResponse, RegisterRequest, SocialAuthRequest
 from app.services.auth_service import verify_password, create_access_token, hash_password
 
 router = APIRouter(tags=["Authentication"])
@@ -64,3 +64,35 @@ def register(
         access_token=token,
         role=new_user.role,
     )
+
+
+@router.post("/auth/social", response_model=LoginResponse)
+def social_login(
+    body: SocialAuthRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Social authentication bridge.
+    Accepts a verified email from Clerk/Google and returns a backend JWT.
+    Auto-creates the user if they don't exist yet.
+    """
+    user = db.query(User).filter(User.email == body.email).first()
+
+    if not user:
+        import secrets
+        user = User(
+            email=body.email,
+            password_hash=hash_password(secrets.token_urlsafe(32)),
+            role="dispatcher",
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+    token = create_access_token({"sub": user.email, "role": user.role})
+
+    return LoginResponse(
+        access_token=token,
+        role=user.role,
+    )
+
