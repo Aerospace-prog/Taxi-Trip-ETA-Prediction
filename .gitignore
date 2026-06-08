@@ -8,6 +8,7 @@ venv/
 # Build artifacts
 frontend/dist/
 *.pkl
+!backend/models/*.pkl
 
 # Environment files (secrets)
 backend/.env
