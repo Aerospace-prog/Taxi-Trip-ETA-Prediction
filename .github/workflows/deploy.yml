@@ -33,6 +33,7 @@ jobs:
           # Copy only the contents of backend/ into the root of the HF Space
           cp -r backend/* hf_space/
           rm -rf hf_space/data
+          rm -rf hf_space/models/*
           
           # Commit and push to Hugging Face
           cd hf_space
